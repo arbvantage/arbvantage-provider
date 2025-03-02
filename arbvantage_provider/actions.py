@@ -5,18 +5,18 @@ T = TypeVar('T')
 
 @dataclass
 class Action:
-    """Класс для описания действия провайдера"""
+    """Class for describing a provider action"""
     description: str
     handler: Callable
     payload_schema: Dict[str, Type]
 
 class ActionsRegistry:
-    """Реестр действий провайдера"""
+    """Registry of provider actions"""
     def __init__(self):
         self._actions: Dict[str, Action] = {}
     
     def register(self, name: str, description: str, payload_schema: Dict[str, Type] = None):
-        """Декоратор для регистрации нового действия"""
+        """Decorator for registering a new action"""
         def wrapper(handler: Callable[..., T]) -> Callable[..., T]:
             self._actions[name] = Action(
                 description=description,
@@ -27,9 +27,9 @@ class ActionsRegistry:
         return wrapper
 
     def get_action(self, name: str) -> Action:
-        """Получить действие по имени"""
+        """Get an action by name"""
         return self._actions.get(name)
 
     def get_all_actions(self) -> Dict[str, Action]:
-        """Получить все зарегистрированные действия"""
+        """Get all registered actions"""
         return self._actions 

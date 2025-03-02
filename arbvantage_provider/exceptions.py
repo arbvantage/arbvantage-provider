@@ -1,11 +1,11 @@
 class ProviderError(Exception):
-    """Базовый класс для исключений провайдера"""
+    """Base class for provider exceptions"""
     pass
 
 class ActionNotFoundError(ProviderError):
-    """Вызывается когда запрошенное действие не найдено"""
+    """Raised when the requested action is not found"""
     pass
 
 class InvalidPayloadError(ProviderError):
-    """Вызывается при неверных параметрах в payload"""
+    """Raised when the payload is invalid"""
     pass 

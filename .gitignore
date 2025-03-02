@@ -24,12 +24,15 @@ wheels/
 venv/
 env/
 ENV/
+.env/
 
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
+
+.DS_Store
 
 # Generated protobuf files
 *_pb2.py

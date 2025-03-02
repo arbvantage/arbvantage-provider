@@ -12,13 +12,13 @@ from .actions import ActionsRegistry
 from .exceptions import ActionNotFoundError, InvalidPayloadError
 
 class Provider:
-    """Базовый класс для создания провайдеров"""
+    """Base class for creating providers"""
     
     def __init__(
         self,
         name: str,
         auth_token: str,
-        hub_url: str = "hub-grpc:50051",
+        hub_url: str,
         execution_timeout: int = 1
     ):
         self.name = name
@@ -30,7 +30,7 @@ class Provider:
         self.actions = ActionsRegistry()
 
     def _create_channel(self):
-        """Создание канала связи с Hub"""
+        """Creating a channel to connect to the Hub"""
         @backoff.on_exception(
             backoff.expo,
             (grpc.RpcError, ConnectionRefusedError),
@@ -45,13 +45,13 @@ class Provider:
         return create()
 
     def process_task(self, action: str, payload: Dict, account: Optional[str] = None) -> Dict[str, Any]:
-        """Обработка задачи"""
+        """Processing a task"""
         try:
             action_def = self.actions.get_action(action)
             if not action_def:
                 raise ActionNotFoundError(f"Action '{action}' not found")
 
-            # Проверка обязательных параметров
+            # Checking required parameters
             missing_params = [
                 param for param in action_def.payload_schema.keys()
                 if param not in payload
@@ -59,7 +59,7 @@ class Provider:
             if missing_params:
                 raise InvalidPayloadError(f"Missing required parameters: {', '.join(missing_params)}")
 
-            # Подготовка параметров для обработчика
+            # Preparing parameters for the handler
             action_params = {
                 param: payload[param]
                 for param in action_def.payload_schema.keys()
@@ -67,7 +67,7 @@ class Provider:
             if account:
                 action_params['account'] = account
 
-            # Выполнение действия
+            # Executing the action
             result = action_def.handler(**action_params)
             return {"status": "success", "data": result}
 
@@ -76,7 +76,7 @@ class Provider:
             return {"status": "error", "error": str(e)}
 
     def start(self):
-        """Запуск провайдера"""
+        """Starting the provider"""
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
         
@@ -94,12 +94,12 @@ class Provider:
                     time.sleep(1)
 
     def _signal_handler(self, signum, frame):
-        """Обработчик сигналов для graceful shutdown"""
+        """Signal handler for graceful shutdown"""
         self.logger.info("Signal received, stopping provider...")
         self.running = False
 
     def _process_tasks(self, stub):
-        """Обработка задач от Hub"""
+        """Processing tasks from the Hub"""
         while self.running:
             try:
                 task = stub.GetTask(arbvantage_pb2.ProviderRequest(
