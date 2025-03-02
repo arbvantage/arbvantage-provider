@@ -1,1 +1,2 @@
+include README.md
 include arbvantage_provider/protos/*.proto 

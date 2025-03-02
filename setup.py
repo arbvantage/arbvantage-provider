@@ -1,4 +1,28 @@
 from setuptools import setup, find_packages
+import os
+import subprocess
+from distutils.command.build_py import build_py
+
+class BuildPyCommand(build_py):
+    """Custom build command to generate proto files."""
+
+    def run(self):
+        # Generate proto files
+        proto_file = "arbvantage_provider/protos/hub.proto"
+        output_dir = "arbvantage_provider/protos"
+        
+        if os.path.exists(proto_file):
+            print("Generating proto files...")
+            subprocess.check_call([
+                "python", "-m", "grpc_tools.protoc",
+                "-I.", 
+                f"--python_out=.",
+                f"--grpc_python_out=.",
+                proto_file
+            ])
+        
+        # Run original build_py command
+        build_py.run(self)
 
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
@@ -32,4 +56,7 @@ setup(
         "protobuf>=3.20.0",
         "grpcio-tools>=1.44.0",
     ],
+    cmdclass={
+        'build_py': BuildPyCommand,
+    },
 ) 

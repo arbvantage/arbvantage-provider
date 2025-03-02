@@ -34,6 +34,6 @@ ENV/
 
 .DS_Store
 
-# Generated protobuf files
+# Generated proto files
 *_pb2.py
-*_pb2_grpc.py 
+*_pb2_grpc.py

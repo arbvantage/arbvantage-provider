@@ -128,6 +128,12 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
+The package will automatically generate the necessary proto files during installation. If you need to regenerate the proto files manually, you can reinstall the package:
+
+```bash
+pip install -e .
+```
+
 ## Project Structure
 
 ```
@@ -136,9 +142,8 @@ arbvantage_provider/
 ├── actions.py           # Action registration and management
 ├── exceptions.py        # Custom exceptions
 ├── provider.py          # Main Provider class
-├── hub_pb2.py          # Generated Protocol Buffers
-├── hub_pb2_grpc.py     # Generated gRPC code
 └── protos/             # Protocol Buffer definitions
+    └── hub.proto       # Proto file for hub communication
 ```
 
 ## License
