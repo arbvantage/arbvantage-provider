@@ -1,35 +1,53 @@
 from setuptools import setup, find_packages
 import os
 import subprocess
-from distutils.command.build_py import build_py
+from setuptools.command.build_py import build_py
+from setuptools.command.develop import develop
+import pkg_resources
+import re
 
-class BuildPyCommand(build_py):
+def generate_proto():
+    """Generate proto files."""
+    try:
+        # Check if grpcio-tools is installed
+        pkg_resources.require('grpcio-tools')
+    except pkg_resources.DistributionNotFound:
+        # Install grpcio-tools if not found
+        subprocess.check_call(['pip', 'install', 'grpcio-tools>=1.44.0'])
+    
+    proto_file = "arbvantage_provider/protos/hub.proto"
+    if os.path.exists(proto_file):
+        print("Generating proto files...")
+        subprocess.check_call([
+            "python", "-m", "grpc_tools.protoc",
+            "-I.", 
+            f"--python_out=.",
+            f"--grpc_python_out=.",
+            proto_file
+        ])
+
+class CustomBuildPy(build_py):
     """Custom build command to generate proto files."""
-
     def run(self):
-        # Generate proto files
-        proto_file = "arbvantage_provider/protos/hub.proto"
-        output_dir = "arbvantage_provider/protos"
-        
-        if os.path.exists(proto_file):
-            print("Generating proto files...")
-            subprocess.check_call([
-                "python", "-m", "grpc_tools.protoc",
-                "-I.", 
-                f"--python_out=.",
-                f"--grpc_python_out=.",
-                proto_file
-            ])
-        
-        # Run original build_py command
+        generate_proto()
         build_py.run(self)
+
+class CustomDevelop(develop):
+    """Custom develop command to generate proto files."""
+    def run(self):
+        generate_proto()
+        develop.run(self)
 
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
+# Read version from __init__.py
+with open('arbvantage_provider/__init__.py', 'r') as f:
+    version = re.search(r'__version__\s*=\s*[\'"]([^\'"]*)[\'"]', f.read()).group(1)
+
 setup(
     name="arbvantage-provider",
-    version="0.1.2",
+    version=version,
     author="Valera Satsura",
     author_email="satsura@gmail.com",
     description="A framework for creating Arbvantage providers",
@@ -50,6 +68,9 @@ setup(
         "Programming Language :: Python :: 3.10",
     ],
     python_requires=">=3.7",
+    setup_requires=[
+        "grpcio-tools>=1.44.0",
+    ],
     install_requires=[
         "grpcio>=1.44.0",
         "backoff>=2.1.2",
@@ -57,6 +78,7 @@ setup(
         "grpcio-tools>=1.44.0",
     ],
     cmdclass={
-        'build_py': BuildPyCommand,
+        'build_py': CustomBuildPy,
+        'develop': CustomDevelop,
     },
 ) 

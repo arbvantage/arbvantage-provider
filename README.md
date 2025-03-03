@@ -26,6 +26,8 @@ Install directly from GitHub:
 pip install git+https://github.com/arbvantage/arbvantage-provider.git
 ```
 
+The package will automatically generate the necessary proto files during installation.
+
 Or install from source:
 
 ```bash
