@@ -1,10 +1,9 @@
 from .provider import Provider
 from .actions import Action, ActionsRegistry
 from .exceptions import ProviderError, ActionNotFoundError, InvalidPayloadError
-from .protos.hub_pb2 import *
-from .protos.hub_pb2_grpc import *
+from .protos import hub_pb2, hub_pb2_grpc
 
-__version__ = "0.1.4"
+__version__ = "0.1.5"
 
 __all__ = [
     'Provider',
