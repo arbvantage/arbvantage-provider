@@ -36,13 +36,15 @@ cd arbvantage-provider
 pip install -e .
 ```
 
+The package will automatically generate the necessary proto files during installation.
+
 ## Dependencies
 
-Main project dependencies:
+Core dependencies (automatically installed):
 - grpcio >= 1.44.0 - gRPC framework
+- grpcio-tools >= 1.44.0 - Tools for working with gRPC
 - backoff >= 2.1.2 - For implementing retry mechanism
 - protobuf >= 3.20.0 - Protocol Buffers
-- grpcio-tools >= 1.44.0 - Tools for working with gRPC
 
 ## Usage
 
@@ -130,12 +132,6 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-The package will automatically generate the necessary proto files during installation. If you need to regenerate the proto files manually, you can reinstall the package:
-
-```bash
-pip install -e .
-```
-
 ## Project Structure
 
 ```
@@ -147,6 +143,13 @@ arbvantage_provider/
 └── protos/             # Protocol Buffer definitions
     └── hub.proto       # Proto file for hub communication
 ```
+
+## Supported Python Versions
+
+- Python 3.7
+- Python 3.8
+- Python 3.9
+- Python 3.10
 
 ## License
 
