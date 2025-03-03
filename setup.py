@@ -69,13 +69,14 @@ setup(
     ],
     python_requires=">=3.7",
     setup_requires=[
-        "grpcio-tools>=1.44.0",
+        "grpcio",
+        "grpcio-tools",
     ],
     install_requires=[
-        "grpcio>=1.44.0",
-        "backoff>=2.1.2",
-        "protobuf>=3.20.0",
-        "grpcio-tools>=1.44.0",
+        "grpcio",
+        "grpcio-tools",
+        "backoff",
+        "protobuf",
     ],
     cmdclass={
         'build_py': CustomBuildPy,
