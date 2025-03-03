@@ -7,7 +7,7 @@ import backoff
 from typing import Optional, Dict, Any
 from datetime import datetime
 
-from protos import arbvantage_pb2, arbvantage_pb2_grpc
+from .protos import hub_pb2, hub_pb2_grpc
 from .actions import ActionsRegistry
 from .exceptions import ActionNotFoundError, InvalidPayloadError
 
@@ -86,7 +86,7 @@ class Provider:
             try:
                 with self._create_channel() as channel:
                     self.logger.info(f"Successfully connected to HUB {self.hub_url}")
-                    stub = arbvantage_pb2_grpc.HubStub(channel)
+                    stub = hub_pb2_grpc.HubStub(channel)
                     self._process_tasks(stub)
             except Exception as e:
                 if self.running:
@@ -102,7 +102,7 @@ class Provider:
         """Processing tasks from the Hub"""
         while self.running:
             try:
-                task = stub.GetTask(arbvantage_pb2.ProviderRequest(
+                task = stub.GetTask(hub_pb2.ProviderRequest(
                     provider=self.name,
                     auth_token=self.auth_token
                 ))
@@ -132,7 +132,7 @@ class Provider:
                     status = "error" if result["status"] == "error" else "success"
                     result_data = {"error": result["error"]} if status == "error" else result["data"]
                         
-                    stub.SubmitTaskResult(arbvantage_pb2.TaskResult(
+                    stub.SubmitTaskResult(hub_pb2.TaskResult(
                         task_id=task.task_id,
                         provider=self.name,
                         auth_token=self.auth_token,
