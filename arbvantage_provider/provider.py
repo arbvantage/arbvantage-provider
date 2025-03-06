@@ -128,9 +128,7 @@ class Provider:
                     account = task.account
                     
                     result = self.process_task(action, payload, account)
-                    
-                    status = "error" if result["status"] == "error" else "success"
-                    result_data = {"error": result["error"]} if status == "error" else result["data"]
+                    result_data = result
                         
                     stub.SubmitTaskResult(hub_pb2.TaskResult(
                         task_id=task.task_id,
