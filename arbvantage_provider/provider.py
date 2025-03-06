@@ -128,7 +128,8 @@ class Provider:
                     account = task.account
                     
                     result = self.process_task(action, payload, account)
-                    result_data = result
+                    status = "error" if result["status"] == "error" else "success"
+
                         
                     stub.SubmitTaskResult(hub_pb2.TaskResult(
                         task_id=task.task_id,
@@ -137,7 +138,7 @@ class Provider:
                         payload=json.dumps(payload),
                         action=action,
                         status=status,
-                        result=json.dumps(result_data)
+                        result=json.dumps(result)
                     ))
                     
                     self.logger.info(f"Task {task.task_id} completed")
