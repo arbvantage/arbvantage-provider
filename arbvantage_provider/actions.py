@@ -41,6 +41,7 @@ class Action:
     description: str
     handler: Callable
     payload_schema: Dict[str, Type]
+    account_schema: Dict[str, Type]
 
 class ActionsRegistry:
     """
