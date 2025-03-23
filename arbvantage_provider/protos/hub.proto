@@ -13,6 +13,7 @@ message TaskResult {
     string action = 5;
     string payload = 6;
     string result = 7;
+    map<string, string> account = 8;
 }
 
 message Task {

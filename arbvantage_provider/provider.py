@@ -1,3 +1,20 @@
+"""
+Provider module for handling communication with the Hub service.
+
+This module implements the core functionality of a provider service that:
+1. Connects to a Hub service using gRPC
+2. Receives tasks from the Hub
+3. Processes tasks using registered actions
+4. Returns results back to the Hub
+
+The module handles:
+- Connection management with retry logic
+- Task processing and validation
+- Error handling and logging
+- Graceful shutdown
+- Rate limiting
+"""
+
 import grpc
 import json
 import time
@@ -10,9 +27,28 @@ from datetime import datetime
 from .protos import hub_pb2, hub_pb2_grpc
 from .actions import ActionsRegistry
 from .exceptions import ActionNotFoundError, InvalidPayloadError
+from .schemas import ProviderResponse
 
 class Provider:
-    """Base class for creating providers"""
+    """
+    Base class for creating providers that communicate with the Hub service.
+    
+    This class implements the core provider functionality including:
+    - Connection management to the Hub
+    - Task processing pipeline
+    - Action execution
+    - Error handling
+    - Graceful shutdown
+    
+    Attributes:
+        name (str): Unique identifier for the provider
+        auth_token (str): Authentication token for Hub communication
+        hub_url (str): URL of the Hub service
+        execution_timeout (int): Default timeout for task execution in seconds
+        running (bool): Flag indicating if the provider is running
+        logger (logging.Logger): Logger instance for the provider
+        actions (ActionsRegistry): Registry of available actions
+    """
     
     def __init__(
         self,
@@ -21,6 +57,15 @@ class Provider:
         hub_url: str,
         execution_timeout: int = 1
     ):
+        """
+        Initialize the provider with required configuration.
+        
+        Args:
+            name (str): Unique identifier for the provider
+            auth_token (str): Authentication token for Hub communication
+            hub_url (str): URL of the Hub service
+            execution_timeout (int, optional): Default timeout for task execution. Defaults to 1.
+        """
         self.name = name
         self.auth_token = auth_token
         self.hub_url = hub_url
@@ -30,7 +75,17 @@ class Provider:
         self.actions = ActionsRegistry()
 
     def _create_channel(self):
-        """Creating a channel to connect to the Hub"""
+        """
+        Create a gRPC channel to connect to the Hub with retry logic.
+        
+        This method implements exponential backoff for connection attempts:
+        - Starts with a base delay
+        - Increases delay exponentially with each retry
+        - Continues until successful connection or max time reached
+        
+        Returns:
+            grpc.Channel: A gRPC channel connected to the Hub
+        """
         @backoff.on_exception(
             backoff.expo,
             (grpc.RpcError, ConnectionRefusedError),
@@ -45,38 +100,96 @@ class Provider:
         return create()
 
     def process_task(self, action: str, payload: Dict, account: Optional[str] = None) -> Dict[str, Any]:
-        """Processing a task"""
+        """
+        Process a single task received from the Hub.
+        
+        This method:
+        1. Validates the action exists
+        2. Checks required parameters are present
+        3. Executes the action handler
+        4. Validates and returns the result
+        
+        Args:
+            action (str): Name of the action to execute
+            payload (Dict): Task payload data
+            account (Optional[str]): Account identifier if applicable
+            
+        Returns:
+            Dict[str, Any]: Processed task result with status and data
+        """
         try:
             action_def = self.actions.get_action(action)
             if not action_def:
-                raise ActionNotFoundError(f"Action '{action}' not found")
+                return ProviderResponse(status="error", message=f"Action '{action}' not found").model_dump()
 
-            # Checking required parameters
-            missing_params = [
-                param for param in action_def.payload_schema.keys()
-                if param not in payload
-            ]
-            if missing_params:
-                raise InvalidPayloadError(f"Missing required parameters: {', '.join(missing_params)}")
-
-            # Preparing parameters for the handler
+            # Validate required parameters for payload if schema exists
+            # If action is required to have payload, we need to validate it
+            if hasattr(action_def, 'payload_schema') and action_def.payload_schema:
+                missing_params = [
+                    param for param in action_def.payload_schema.keys()
+                    if param not in payload
+                ]
+                if missing_params:
+                    return ProviderResponse(status="error", message=f"Missing required parameters: {', '.join(missing_params)}").model_dump()
+            
+            # Validate required parameters for account if schema exists
+            # If action is required to have account, we need to validate it
+            if hasattr(action_def, 'account_schema') and action_def.account_schema:
+                missing_account_params = [
+                    param for param in action_def.account_schema.keys()
+                    if not account or param not in account
+                ]
+                if missing_account_params:
+                    return ProviderResponse(status="error", message=f"Missing required account parameters: {', '.join(missing_account_params)}").model_dump()
+            
             action_params = {
-                param: payload[param]
-                for param in action_def.payload_schema.keys()
+                'payload': {},  # By default, we pass empty payload
+                'account': {},  # By default, we pass empty account
             }
-            if account:
-                action_params['account'] = account
 
-            # Executing the action
+            # Filter payload parameters only if schema exists
+            if hasattr(action_def, 'payload_schema') and action_def.payload_schema:
+                action_params['payload'] = {
+                    param: payload[param]
+                    for param in action_def.payload_schema.keys()
+                }
+
+            # Filter account parameters only if schema exists
+            if hasattr(action_def, 'account_schema') and action_def.account_schema:
+                action_params['account'] = {
+                    param: account[param]
+                    for param in action_def.account_schema.keys()
+                }
+            
+            # Execute action and validate response
             result = action_def.handler(**action_params)
-            return {"status": "success", "data": result}
+            
+            # Check if result is an instance of ProviderResponse
+            if not isinstance(result, ProviderResponse):
+                error_msg = f"Action {action} must return ProviderResponse instance, got {type(result)}"
+                self.logger.error(error_msg)
+                return ProviderResponse(
+                    status="error",
+                    data=result,
+                    message=error_msg
+                ).model_dump()
+            
+            return result.model_dump()
 
         except Exception as e:
             self.logger.error(f"Error processing task: {e}")
-            return {"status": "error", "error": str(e)}
+            return ProviderResponse(status="error", message=str(e)).model_dump()
 
     def start(self):
-        """Starting the provider"""
+        """
+        Start the provider service.
+        
+        This method:
+        1. Sets up signal handlers for graceful shutdown
+        2. Establishes connection to the Hub
+        3. Starts processing tasks in a loop
+        4. Handles connection errors and retries
+        """
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
         
@@ -94,12 +207,29 @@ class Provider:
                     time.sleep(1)
 
     def _signal_handler(self, signum, frame):
-        """Signal handler for graceful shutdown"""
+        """
+        Handle shutdown signals for graceful termination.
+        
+        Args:
+            signum: Signal number
+            frame: Current stack frame
+        """
         self.logger.info("Signal received, stopping provider...")
         self.running = False
 
     def _process_tasks(self, stub):
-        """Processing tasks from the Hub"""
+        """
+        Process tasks received from the Hub.
+        
+        This method:
+        1. Polls for new tasks from the Hub
+        2. Handles rate limiting
+        3. Processes tasks and submits results
+        4. Handles various error conditions
+        
+        Args:
+            stub: gRPC stub for Hub communication
+        """
         while self.running:
             try:
                 task = stub.GetTask(hub_pb2.ProviderRequest(
@@ -130,7 +260,7 @@ class Provider:
                     result = self.process_task(action, payload, account)
                     status = "error" if result["status"] == "error" else "success"
 
-                        
+                    # Submit task result back to Hub
                     stub.SubmitTaskResult(hub_pb2.TaskResult(
                         task_id=task.task_id,
                         provider=self.name,
@@ -138,7 +268,8 @@ class Provider:
                         payload=json.dumps(payload),
                         action=action,
                         status=status,
-                        result=json.dumps(result)
+                        result=json.dumps(result),
+                        account=account
                     ))
                     
                     self.logger.info(f"Task {task.task_id} completed")
