@@ -60,7 +60,7 @@ class ActionsRegistry:
         """Initialize an empty action registry."""
         self._actions: Dict[str, Action] = {}
     
-    def register(self, name: str, description: str, payload_schema: Dict[str, Type] = None):
+    def register(self, name: str, description: str, payload_schema: Dict[str, Type] = None, account_schema: Dict[str, Type] = None):
         """
         Decorator for registering a new action.
         
@@ -88,7 +88,8 @@ class ActionsRegistry:
             self._actions[name] = Action(
                 description=description,
                 handler=handler,
-                payload_schema=payload_schema or {}
+                payload_schema=payload_schema or {},
+                account_schema=account_schema or {} 
             )
             return handler
         return wrapper
