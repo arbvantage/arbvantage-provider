@@ -77,6 +77,8 @@ setup(
         "grpcio-tools",
         "backoff",
         "protobuf",
+        "pydantic",
+        "requests", 
     ],
     cmdclass={
         'build_py': CustomBuildPy,
