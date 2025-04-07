@@ -135,12 +135,9 @@ class Provider:
             # Validate required parameters for account if schema exists
             # If action is required to have account, we need to validate it
             if hasattr(action_def, 'account_schema') and action_def.account_schema:
-                if not account or 'credentials' not in account:
-                    return ProviderResponse(status="error", message="Missing credentials in account").model_dump()
-                
                 missing_account_params = [
                     param for param in action_def.account_schema.keys()
-                    if param not in account['credentials']
+                    if not account or param not in account
                 ]
                 if missing_account_params:
                     return ProviderResponse(status="error", message=f"Missing required account parameters: {', '.join(missing_account_params)}").model_dump()
@@ -157,10 +154,10 @@ class Provider:
                     for param in action_def.payload_schema.keys()
                 }
 
-            # Filter account parameters only if schema exists and credentials present
-            if hasattr(action_def, 'account_schema') and action_def.account_schema and account and 'credentials' in account:
+            # Filter account parameters only if schema exists
+            if hasattr(action_def, 'account_schema') and action_def.account_schema:
                 action_params['account'] = {
-                    param: account['credentials'][param]
+                    param: account[param]
                     for param in action_def.account_schema.keys()
                 }
             
