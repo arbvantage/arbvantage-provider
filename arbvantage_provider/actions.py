@@ -10,8 +10,10 @@ This module implements the action registration and management system that:
 The module uses type hints and dataclasses for better type safety and code organization.
 """
 
-from typing import TypeVar, Callable, Dict, Any, Type
+from typing import TypeVar, Callable, Dict, Any, Type, Optional
 from dataclasses import dataclass
+from .rate_limit import RateLimitMonitor, TimeBasedRateLimitMonitor
+from .schemas import ProviderResponse
 
 T = TypeVar('T')
 
@@ -24,24 +26,45 @@ class Action:
     - Description of what the action does
     - The handler function that implements the action
     - The schema defining the expected payload structure
-    
-    Attributes:
-        description (str): 
-            Human-readable description of what the action does.
-            Used for documentation and help purposes.
-            
-        handler (Callable): 
-            The function that implements the action logic.
-            Must be callable and accept the defined payload parameters.
-            
-        payload_schema (Dict[str, Type]): 
-            Dictionary mapping parameter names to their expected types.
-            Used for validation of incoming task payloads.
+    - Rate limiting configuration
     """
     description: str
     handler: Callable
     payload_schema: Dict[str, Type]
     account_schema: Dict[str, Type]
+    rate_limit_monitor: Optional[RateLimitMonitor] = None
+
+    def execute(self, *args, **kwargs) -> Any:
+        """
+        Execute the action with rate limiting if configured.
+        
+        Args:
+            *args: Positional arguments for the action
+            **kwargs: Keyword arguments for the action
+            
+        Returns:
+            Any: Result of the action execution
+        """
+        if self.rate_limit_monitor:
+            # Check rate limits
+            limits = self.rate_limit_monitor.check_rate_limits()
+            if limits and limits.get("rate_limited"):
+                wait_time = limits.get("wait_time", 1.0)
+                self.rate_limit_monitor.handle_throttling(wait_time)
+                return ProviderResponse(
+                    status="limit",
+                    message=f"Rate limit exceeded. Please wait {wait_time} seconds",
+                    data={"wait_time": wait_time}
+                ).model_dump()
+                
+            # Execute the action
+            result = self.handler(*args, **kwargs)
+            
+            # Update rate limit after successful execution
+            self.rate_limit_monitor.make_safe_request(lambda: None)
+            return result
+            
+        return self.handler(*args, **kwargs)
 
 class ActionsRegistry:
     """
@@ -52,16 +75,51 @@ class ActionsRegistry:
     2. Retrieve actions by name
     3. List all available actions
     4. Validate action parameters
-    
-    The registry maintains a dictionary of action names to Action instances,
-    allowing for efficient lookup and management of available actions.
+    5. Configure rate limiting
     """
     
     def __init__(self):
         """Initialize an empty action registry."""
         self._actions: Dict[str, Action] = {}
+        self._default_rate_limit_monitor: Optional[RateLimitMonitor] = None
     
-    def register(self, name: str, description: str, payload_schema: Dict[str, Type] = None, account_schema: Dict[str, Type] = None):
+    def set_default_rate_limit(self, min_delay: float = 1.0) -> None:
+        """
+        Set default rate limit for all actions.
+        
+        Args:
+            min_delay: Minimum delay between calls in seconds
+        """
+        self._default_rate_limit_monitor = TimeBasedRateLimitMonitor(min_delay=min_delay)
+        
+    def set_rate_limit(self, action_name: str, min_delay: float = 1.0) -> None:
+        """
+        Set rate limit for a specific action.
+        
+        Args:
+            action_name: Name of the action to configure
+            min_delay: Minimum delay between calls in seconds
+        """
+        if action_name in self._actions:
+            self._actions[action_name].rate_limit_monitor = TimeBasedRateLimitMonitor(min_delay=min_delay)
+            
+    def set_custom_rate_limit(self, action_name: str, monitor: RateLimitMonitor) -> None:
+        """
+        Set custom rate limit monitor for a specific action.
+        
+        Args:
+            action_name: Name of the action to configure
+            monitor: Custom rate limit monitor instance
+        """
+        if action_name in self._actions:
+            self._actions[action_name].rate_limit_monitor = monitor
+    
+    def register(self, 
+                name: str, 
+                description: str, 
+                payload_schema: Dict[str, Type] = None, 
+                account_schema: Dict[str, Type] = None,
+                rate_limit_monitor: Optional[RateLimitMonitor] = None):
         """
         Decorator for registering a new action.
         
@@ -82,6 +140,10 @@ class ActionsRegistry:
                 Dictionary defining the expected payload structure.
                 If None, an empty dict is used.
                 
+            rate_limit_monitor (Optional[RateLimitMonitor], optional):
+                Custom rate limit monitor for this action.
+                If None, the default rate limit monitor will be used.
+                
         Returns:
             Callable: A decorator function that registers the action handler.
         """
@@ -90,7 +152,8 @@ class ActionsRegistry:
                 description=description,
                 handler=handler,
                 payload_schema=payload_schema or {},
-                account_schema=account_schema or {} 
+                account_schema=account_schema or {},
+                rate_limit_monitor=rate_limit_monitor or self._default_rate_limit_monitor
             )
             return handler
         return wrapper

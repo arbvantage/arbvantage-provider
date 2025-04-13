@@ -78,7 +78,8 @@ setup(
         "backoff",
         "protobuf",
         "pydantic",
-        "requests", 
+        "requests",
+        "pytz",
     ],
     cmdclass={
         'build_py': CustomBuildPy,

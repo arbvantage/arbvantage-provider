@@ -18,6 +18,15 @@ A comprehensive Python framework for building providers that communicate with th
 - [Contributing](#contributing)
 - [License](#license)
 - [Rate Limiting](#rate-limiting)
+- [Response Formats](#response-formats)
+- [Advanced Features](#advanced-features)
+- [Best Practices](#best-practices)
+- [Troubleshooting](#troubleshooting)
+- [Time Zone Support](#time-zone-support)
+- [Logging and Monitoring](#logging-and-monitoring)
+- [Security Considerations](#security-considerations)
+- [Performance Optimization](#performance-optimization)
+- [Testing and Debugging](#testing-and-debugging)
 
 ## Overview
 
@@ -29,9 +38,15 @@ The Arbvantage Provider Framework is designed to simplify the development of pro
 - **Type Safety**: Comprehensive type hints for better development experience
 - **Validation**: Built-in payload validation for actions
 - **Scalability**: Designed for high-performance and scalable applications
+- **Flexibility**: Support for various rate limiting strategies and monitoring options
+- **Extensibility**: Easy to extend with custom implementations
+- **Time Zone Support**: Built-in time zone handling for distributed systems
+- **Comprehensive Logging**: Advanced logging capabilities with context
+- **Security**: Built-in security features and best practices
 
 ## Features
 
+### Core Features
 - 🔄 Automatic connection handling with the Arbvantage hub
 - 🔁 Built-in retry mechanism for failed connections
 - 📝 Action registration system with payload validation
@@ -40,6 +55,20 @@ The Arbvantage Provider Framework is designed to simplify the development of pro
 - 🎯 Type hints for better development experience
 - 🔒 Secure authentication handling
 - ⏱️ Configurable timeouts
+- 🌍 Time zone support
+- 📈 Performance monitoring
+
+### Advanced Features
+- 🚦 Sophisticated rate limiting system
+- 🔄 Async operation support
+- 💾 Built-in caching mechanisms
+- 🔄 Retry logic with exponential backoff
+- 📊 Custom monitoring capabilities
+- 🔄 Distributed operation support
+- 🔒 Advanced error handling
+- 📝 Complex schema validation
+- 🌐 Multi-timezone support
+- 📊 Advanced metrics collection
 
 ## Installation
 
@@ -60,6 +89,16 @@ git clone https://github.com/arbvantage/arbvantage-provider.git
 cd arbvantage-provider
 pip install -e .
 ```
+
+### Dependencies
+The framework requires the following dependencies:
+- grpcio
+- grpcio-tools
+- backoff
+- protobuf
+- pydantic
+- requests
+- pytz
 
 ## Quick Start
 
@@ -104,6 +143,9 @@ The Provider class accepts the following configuration parameters:
 | `auth_token` | str | Authentication token for the Arbvantage hub | Required |
 | `hub_url` | str | URL of the Arbvantage hub | "hub-grpc:50051" |
 | `execution_timeout` | int | Timeout for task execution in seconds | 1 |
+| `rate_limit_monitor` | RateLimitMonitor | Custom rate limit monitor | None |
+| `logger` | Logger | Custom logger instance | None |
+| `timezone` | str | Timezone for the provider | "UTC" |
 
 ### Environment Variables
 
@@ -114,13 +156,103 @@ export PROVIDER_NAME="my-provider"
 export PROVIDER_AUTH_TOKEN="your-auth-token"
 export HUB_GRPC_URL="hub-grpc:50051"
 export TASK_EXECUTION_TIMEOUT=1
+export PROVIDER_TIMEZONE="Europe/Moscow"
 ```
+
+## Time Zone Support
+
+The framework provides comprehensive time zone support for distributed systems. Here are some examples:
+
+### Basic Time Zone Usage
+
+```python
+from arbvantage_provider import Provider
+from arbvantage_provider.rate_limit import TimeBasedRateLimitMonitor
+
+class TimeZoneProvider(Provider):
+    def __init__(self):
+        # Initialize with Moscow timezone
+        super().__init__(
+            name="timezone-provider",
+            auth_token="your-auth-token",
+            hub_url="hub-grpc:50051",
+            timezone="Europe/Moscow"
+        )
+        
+        # Rate limit monitor with timezone
+        self.rate_limit_monitor = TimeBasedRateLimitMonitor(
+            min_delay=1.0,
+            timezone="Europe/Moscow"
+        )
+```
+
+### Advanced Time Zone Features
+
+```python
+from arbvantage_provider import Provider
+from arbvantage_provider.rate_limit import AdvancedRateLimitMonitor
+from datetime import datetime
+import pytz
+
+class AdvancedTimeZoneProvider(Provider):
+    def __init__(self):
+        # Initialize with multiple timezone support
+        super().__init__(
+            name="advanced-timezone-provider",
+            auth_token="your-auth-token",
+            hub_url="hub-grpc:50051",
+            timezone="UTC"  # Default timezone
+        )
+        
+        # Advanced rate limit monitor with timezone
+        self.rate_limit_monitor = AdvancedRateLimitMonitor(
+            min_delay=1.0,
+            max_calls_per_second=2,
+            warning_threshold=0.8,
+            critical_threshold=0.9,
+            timezone="Europe/Moscow"
+        )
+        
+        # Register timezone-aware action
+        @self.actions.register(
+            name="timezone_action",
+            description="Action with timezone awareness",
+            payload_schema={"timezone": str}
+        )
+        def timezone_action(payload: dict) -> dict:
+            # Get current time in specified timezone
+            tz = pytz.timezone(payload["timezone"])
+            current_time = datetime.now(tz)
+            
+            return {
+                "status": "success",
+                "data": {
+                    "current_time": current_time.isoformat(),
+                    "timezone": str(tz)
+                }
+            }
+```
+
+### Time Zone Best Practices
+
+1. **Consistent Time Zone Usage**
+   - Always specify timezone when creating providers
+   - Use UTC for internal storage
+   - Convert to local timezone only for display
+
+2. **Rate Limiting with Time Zones**
+   - Consider timezone differences in rate limiting
+   - Use appropriate timezone for business hours
+   - Handle daylight saving time changes
+
+3. **Distributed Systems**
+   - Use UTC for inter-service communication
+   - Store timestamps with timezone information
+   - Handle timezone conversions at the edge
 
 ## Action System
 
-### Registering Actions
-
-Actions are registered using the `@actions.register` decorator:
+### Basic Action Registration
 
 ```python
 @self.actions.register(
@@ -137,321 +269,297 @@ def action_handler(param1: str, param2: int, optional_param: Optional[str] = Non
     return {"result": "success"}
 ```
 
-### Payload Validation
-
-The framework automatically validates incoming payloads against the defined schema:
+### Complex Schema Validation
 
 ```python
-payload_schema = {
-    "required_string": str,
-    "required_int": int,
-    "optional_float": Optional[float],
-    "nested": {
-        "field": str
-    }
-}
-```
-
-### Complex Nested Structures
-
-The framework supports complex nested structures with multiple levels of nesting. Here's an example of a complex schema for a user management system:
-
-```python
-from typing import List, Optional, Dict, Any
-from datetime import datetime
-
 @self.actions.register(
-    name="create_user",
-    description="Create a new user with complex profile data",
+    name="process_order",
+    description="Process a complex order with validation",
     payload_schema={
-        "user": {
-            "personal_info": {
-                "first_name": str,
-                "last_name": str,
-                "date_of_birth": datetime,
-                "gender": str,
-                "nationality": str
-            },
-            "contact_info": {
-                "email": str,
-                "phone": str,
-                "addresses": List[Dict[str, str]],  # List of address dictionaries
-                "emergency_contacts": List[{
-                    "name": str,
-                    "relationship": str,
-                    "phone": str
-                }]
-            },
-            "preferences": {
-                "language": str,
-                "timezone": str,
-                "notifications": {
-                    "email": bool,
-                    "sms": bool,
-                    "push": bool
-                },
-                "privacy_settings": {
-                    "profile_visibility": str,
-                    "data_sharing": bool
-                }
-            },
-            "subscriptions": List[{
-                "service": str,
-                "plan": str,
-                "start_date": datetime,
-                "end_date": Optional[datetime],
-                "features": List[str]
-            }]
-        },
-        "metadata": {
-            "source": str,
-            "created_by": str,
-            "tags": List[str],
-            "custom_fields": Dict[str, Any]  # Flexible dictionary for additional data
+        "order_id": str,
+        "items": [{
+            "product_id": str,
+            "quantity": int,
+            "price": float
+        }],
+        "customer": {
+            "name": str,
+            "email": str,
+            "address": {
+                "street": str,
+                "city": str,
+                "zip": str
+            }
         }
     }
 )
-def create_user(payload: Dict) -> Dict:
-    """
-    Create a new user with complex profile data
-    
-    Args:
-        payload: Dictionary containing user data with nested structures
+def process_order(payload: Dict[str, Any]) -> Dict[str, Any]:
+    # Implementation
+    return {"status": "success"}
+```
+
+### Async Operations
+
+```python
+@self.actions.register(
+    name="async_action",
+    description="Async action example",
+    payload_schema={"param": str}
+)
+async def async_action(payload: Dict[str, Any]) -> Dict[str, Any]:
+    # Async implementation
+    result = await some_async_operation(payload["param"])
+    return {"result": result}
+```
+
+## Rate Limiting
+
+### Basic Rate Limiting
+```python
+@self.actions.register(
+    name="limited_action",
+    description="Action with rate limiting",
+    payload_schema={"param": str},
+    rate_limit_monitor=TimeBasedRateLimitMonitor(
+        min_delay=1.0,
+        timezone="UTC"
+    )
+)
+def limited_action(payload: Dict[str, Any]) -> Dict[str, Any]:
+    return {"result": "success"}
+```
+
+### Advanced Rate Limiting
+```python
+@self.actions.register(
+    name="advanced_action",
+    description="Action with advanced rate limiting",
+    payload_schema={"param": str},
+    rate_limit_monitor=AdvancedRateLimitMonitor(
+        requests_per_minute=60,
+        burst_size=10,
+        timezone="Europe/Moscow"
+    )
+)
+def advanced_action(payload: Dict[str, Any]) -> Dict[str, Any]:
+    return {"result": "success"}
+```
+
+### Custom Rate Limit Monitor
+
+```python
+class CustomRateLimitMonitor(RateLimitMonitor):
+    def __init__(self, max_requests: int = 100, window_size: int = 60, timezone: str = "UTC"):
+        self.max_requests = max_requests
+        self.window_size = window_size
+        self.timezone = pytz.timezone(timezone)
+        self.requests = []
         
-    Returns:
-        Dict: Response with created user information
-    """
-    try:
-        # Process the complex nested data
-        user_data = payload["user"]
+    def _get_current_time(self) -> float:
+        return datetime.now(self.timezone).timestamp()
         
-        # Example of accessing nested data
-        personal_info = user_data["personal_info"]
-        contact_info = user_data["contact_info"]
-        preferences = user_data["preferences"]
+    def check_rate_limits(self):
+        current_time = self._get_current_time()
+        self.requests = [t for t in self.requests 
+                        if current_time - t < self.window_size]
         
-        # Process addresses
-        addresses = contact_info["addresses"]
-        for address in addresses:
-            # Process each address
-            pass
-            
-        # Process emergency contacts
-        emergency_contacts = contact_info["emergency_contacts"]
-        for contact in emergency_contacts:
-            # Process each emergency contact
-            pass
-            
-        # Process subscriptions
-        subscriptions = user_data["subscriptions"]
-        for subscription in subscriptions:
-            # Process each subscription
-            pass
-            
-        return ProviderResponse(
-            status="success",
-            message="User created successfully",
-            data={
-                "user_id": "generated_id",
-                "created_at": datetime.now().isoformat(),
-                "profile_summary": {
-                    "name": f"{personal_info['first_name']} {personal_info['last_name']}",
-                    "email": contact_info["email"],
-                    "subscriptions_count": len(subscriptions)
-                }
+        if len(self.requests) >= self.max_requests:
+            return {
+                "rate_limited": True,
+                "wait_time": self.window_size - (current_time - self.requests[0]),
+                "timezone": str(self.timezone)
             }
+        return None
+```
+
+## Logging and Monitoring
+
+### Basic Logging
+```python
+from arbvantage_provider.logger import Logger
+
+class LoggingProvider(Provider):
+    def __init__(self):
+        # Initialize with custom logger
+        logger = Logger(
+            name="my-provider",
+            level="INFO",
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
         
-    except Exception as e:
-        return ProviderResponse(
-            status="error",
-            message=f"Failed to create user: {str(e)}"
+        super().__init__(
+            name="logging-provider",
+            auth_token="your-auth-token",
+            hub_url="hub-grpc:50051",
+            logger=logger
         )
 ```
 
-This example demonstrates:
-- Multiple levels of nesting
-- Lists of dictionaries
-- Optional fields
-- Complex data types (datetime)
-- Flexible data structures (Dict[str, Any])
-- Nested validation
-- Error handling for complex structures
-
-## Error Handling
-
-The framework provides several custom exceptions:
-
-- `ActionNotFoundError`: Raised when an undefined action is requested
-- `InvalidPayloadError`: Raised when the payload doesn't match the schema
-- `ConnectionError`: Raised when there are issues connecting to the hub
-- `AuthenticationError`: Raised when authentication fails
-
-Example error handling:
-
+### Advanced Monitoring
 ```python
-try:
-    provider.start()
-except ConnectionError as e:
-    print(f"Failed to connect to hub: {e}")
-except AuthenticationError as e:
-    print(f"Authentication failed: {e}")
-```
-
-## Development Guide
-
-### Setting Up Development Environment
-
-1. Clone the repository:
-```bash
-git clone https://github.com/arbvantage/arbvantage-provider.git
-cd arbvantage-provider
-```
-
-2. Create and activate a virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate  # Linux/MacOS
-# or
-venv\Scripts\activate  # Windows
-```
-
-3. Install development dependencies:
-```bash
-pip install -r requirements.txt
-pip install -e .
-```
-
-### Running Tests
-
-```bash
-python -m pytest tests/
-```
-
-## Project Structure
-
-```
-arbvantage_provider/
-├── __init__.py          # Package initialization
-├── actions.py           # Action registration and management
-├── exceptions.py        # Custom exceptions
-├── provider.py          # Main Provider class
-└── protos/             # Protocol Buffer definitions
-    └── hub.proto       # Proto file for hub communication
-```
-
-## API Reference
-
-### Provider Class
-
-```python
-class Provider:
-    def __init__(
-        self,
-        name: str,
-        auth_token: str,
-        hub_url: str = "hub-grpc:50051",
-        execution_timeout: int = 1
-    ):
-        pass
-
-    def start(self) -> None:
-        """Start the provider and establish connection with the hub."""
-        pass
-
-    def stop(self) -> None:
-        """Stop the provider and close the connection."""
-        pass
-```
-
-### Actions Registry
-
-```python
-class Actions:
-    def register(
-        self,
-        name: str,
-        description: str,
-        payload_schema: Dict[str, Any]
-    ) -> Callable:
-        """Register a new action with the provider."""
-        pass
-```
-
-## Examples
-
-### Basic Provider
-
-```python
-from arbvantage_provider import Provider
-import os
-
-class BasicProvider(Provider):
+class MonitoredProvider(Provider):
     def __init__(self):
         super().__init__(
-            name="basic-provider",
+            name="monitored-provider",
+            auth_token="your-auth-token",
+            hub_url="hub-grpc:50051"
+        )
+        
+        # Custom monitoring setup
+        self.metrics = {
+            'requests': 0,
+            'errors': 0,
+            'avg_response_time': 0
+        }
+        
+    def _process_task(self, task):
+        start_time = time.time()
+        try:
+            result = super()._process_task(task)
+            self._update_metrics(success=True, duration=time.time() - start_time)
+            return result
+        except Exception as e:
+            self._update_metrics(success=False)
+            raise
+            
+    def _update_metrics(self, success: bool, duration: float = 0):
+        self.metrics['requests'] += 1
+        if not success:
+            self.metrics['errors'] += 1
+        if duration > 0:
+            self.metrics['avg_response_time'] = (
+                (self.metrics['avg_response_time'] * (self.metrics['requests'] - 1) + duration)
+                / self.metrics['requests']
+            )
+```
+
+## Security Considerations
+
+### Authentication
+```python
+class SecureProvider(Provider):
+    def __init__(self):
+        super().__init__(
+            name="secure-provider",
             auth_token=os.getenv("PROVIDER_AUTH_TOKEN"),
-            hub_url=os.getenv("HUB_GRPC_URL", "hub-grpc:50051")
+            hub_url="hub-grpc:50051"
         )
-
-        @self.actions.register(
-            name="echo",
-            description="Echo back the input",
-            payload_schema={"message": str}
-        )
-        def echo(message: str):
-            return {"echo": message}
-
-if __name__ == "__main__":
-    provider = BasicProvider()
-    provider.start()
+        
+        # Additional security measures
+        self._validate_auth_token()
+        
+    def _validate_auth_token(self):
+        if not self.auth_token or len(self.auth_token) < 32:
+            raise ValueError("Invalid authentication token")
 ```
 
-### Advanced Provider with Error Handling
-
+### Input Validation
 ```python
-from arbvantage_provider import Provider, ActionNotFoundError, InvalidPayloadError
-import os
+@self.actions.register(
+    name="secure_action",
+    description="Action with input validation",
+    payload_schema={
+        "user_id": str,
+        "action": str
+    }
+)
+def secure_action(payload: Dict[str, Any]) -> Dict[str, Any]:
+    # Validate input
+    if not self._is_valid_user(payload["user_id"]):
+        raise ValueError("Invalid user ID")
+        
+    if not self._is_allowed_action(payload["action"]):
+        raise ValueError("Action not allowed")
+        
+    return {"status": "success"}
+```
 
-class AdvancedProvider(Provider):
+## Performance Optimization
+
+### Caching
+```python
+from functools import lru_cache
+
+class CachedProvider(Provider):
+    @lru_cache(maxsize=100)
+    def _get_cached_data(self, key: str) -> Optional[Dict[str, Any]]:
+        # Implementation
+        return None
+        
+    @self.actions.register(
+        name="cached_action",
+        description="Action with caching",
+        payload_schema={"key": str}
+    )
+    def cached_action(payload: Dict[str, Any]) -> Dict[str, Any]:
+        cached_result = self._get_cached_data(payload["key"])
+        if cached_result:
+            return {"status": "success", "cached": True, "data": cached_result}
+        # Implementation for non-cached case
+```
+
+### Async Operations
+```python
+class AsyncProvider(Provider):
+    @self.actions.register(
+        name="async_action",
+        description="Async action example",
+        payload_schema={"param": str}
+    )
+    async def async_action(payload: Dict[str, Any]) -> Dict[str, Any]:
+        # Async implementation
+        result = await self._process_async(payload["param"])
+        return {"status": "success", "data": result}
+```
+
+## Testing and Debugging
+
+### Unit Testing
+```python
+import unittest
+from unittest.mock import Mock, patch
+
+class TestProvider(unittest.TestCase):
+    def setUp(self):
+        self.provider = MyProvider()
+        
+    def test_action(self):
+        result = self.provider.my_action("test", 123)
+        self.assertEqual(result["status"], "success")
+        
+    @patch('arbvantage_provider.Provider._process_task')
+    def test_rate_limiting(self, mock_process):
+        # Test rate limiting
+        pass
+```
+
+### Debugging
+```python
+class DebugProvider(Provider):
     def __init__(self):
         super().__init__(
-            name="advanced-provider",
-            auth_token=os.getenv("PROVIDER_AUTH_TOKEN")
+            name="debug-provider",
+            auth_token="your-auth-token",
+            hub_url="hub-grpc:50051"
         )
-
-        @self.actions.register(
-            name="process_data",
-            description="Process input data",
-            payload_schema={
-                "data": list,
-                "options": dict
-            }
-        )
-        def process_data(data: list, options: dict):
-            try:
-                # Process data
-                return {"status": "success", "processed": len(data)}
-            except Exception as e:
-                return {"status": "error", "message": str(e)}
-
-if __name__ == "__main__":
-    try:
-        provider = AdvancedProvider()
-        provider.start()
-    except Exception as e:
-        print(f"Provider failed to start: {e}")
+        
+        # Enable debug logging
+        self.logger.setLevel("DEBUG")
+        
+    def _process_task(self, task):
+        self.logger.debug(f"Processing task: {task}")
+        try:
+            result = super()._process_task(task)
+            self.logger.debug(f"Task result: {result}")
+            return result
+        except Exception as e:
+            self.logger.error(f"Task failed: {str(e)}")
+            raise
 ```
 
 ## Contributing
 
-Contributions are welcome! Please follow these steps:
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
 
 ## License
 
@@ -718,3 +826,282 @@ class ProviderB(Provider):
             rate_limit_monitor=shared_rate_limit
         )
 ```
+
+### Практические примеры использования Rate Limiting
+
+#### 1. Глобальный rate limit как свойство класса
+
+```python
+from arbvantage_provider import Provider
+from arbvantage_provider.rate_limit import TimeBasedRateLimitMonitor
+
+class GlobalRateLimitProvider(Provider):
+    # Определяем глобальный rate limit как свойство класса
+    rate_limit_monitor = TimeBasedRateLimitMonitor(min_delay=1.0)
+    
+    def __init__(self):
+        super().__init__(
+            name="global-rate-provider",
+            auth_token="your-auth-token",
+            hub_url="hub-grpc:50051"
+        )
+        
+        # Все действия будут использовать глобальный rate limit
+        @self.actions.register(
+            name="action1",
+            description="Действие с глобальным rate limit",
+            payload_schema={"param": str}
+        )
+        def action1(payload: dict) -> dict:
+            return {"result": "action1"}
+            
+        @self.actions.register(
+            name="action2",
+            description="Другое действие с тем же rate limit",
+            payload_schema={"param": str}
+        )
+        def action2(payload: dict) -> dict:
+            return {"result": "action2"}
+```
+
+#### 2. Rate limit для конкретного действия
+
+```python
+from arbvantage_provider import Provider
+from arbvantage_provider.rate_limit import TimeBasedRateLimitMonitor
+
+class PerActionRateLimitProvider(Provider):
+    def __init__(self):
+        super().__init__(
+            name="per-action-rate-provider",
+            auth_token="your-auth-token",
+            hub_url="hub-grpc:50051"
+        )
+        
+        # Действие без rate limit
+        @self.actions.register(
+            name="unlimited_action",
+            description="Действие без ограничений",
+            payload_schema={"param": str}
+        )
+        def unlimited_action(payload: dict) -> dict:
+            return {"result": "unlimited"}
+            
+        # Действие с быстрым rate limit
+        @self.actions.register(
+            name="fast_action",
+            description="Действие с частыми запросами",
+            payload_schema={"param": str},
+            rate_limit_monitor=TimeBasedRateLimitMonitor(min_delay=0.1)  # Rate limit прямо в регистрации
+        )
+        def fast_action(payload: dict) -> dict:
+            return {"result": "fast"}
+            
+        # Действие с медленным rate limit
+        @self.actions.register(
+            name="slow_action",
+            description="Действие с редкими запросами",
+            payload_schema={"param": str},
+            rate_limit_monitor=TimeBasedRateLimitMonitor(min_delay=5.0)  # Rate limit прямо в регистрации
+        )
+        def slow_action(payload: dict) -> dict:
+            return {"result": "slow"}
+```
+
+#### 3. Комбинированный подход
+
+```python
+from arbvantage_provider import Provider
+from arbvantage_provider.rate_limit import TimeBasedRateLimitMonitor
+
+class CombinedRateLimitProvider(Provider):
+    # Глобальный rate limit по умолчанию
+    rate_limit_monitor = TimeBasedRateLimitMonitor(min_delay=1.0)
+    
+    def __init__(self):
+        super().__init__(
+            name="combined-rate-provider",
+            auth_token="your-auth-token",
+            hub_url="hub-grpc:50051"
+        )
+        
+        # Действие с глобальным rate limit
+        @self.actions.register(
+            name="default_action",
+            description="Действие с глобальным rate limit",
+            payload_schema={"param": str}
+        )
+        def default_action(payload: dict) -> dict:
+            return {"result": "default"}
+            
+        # Действие с собственным rate limit
+        @self.actions.register(
+            name="custom_action",
+            description="Действие с собственным rate limit",
+            payload_schema={"param": str},
+            rate_limit_monitor=TimeBasedRateLimitMonitor(min_delay=0.5)  # Переопределяем глобальный limit
+        )
+        def custom_action(payload: dict) -> dict:
+            return {"result": "custom"}
+```
+
+## Response Formats
+
+The framework provides standardized response formats for all operations. Here are all possible response types:
+
+### 1. Success Response
+```python
+{
+    "status": "success",
+    "data": {
+        # Any data returned by the action
+    }
+}
+```
+
+### 2. Error Response
+```python
+{
+    "status": "error",
+    "message": "Error description",
+    "data": {
+        # Optional additional error data
+    }
+}
+```
+
+### 3. Rate Limit Response
+```python
+{
+    "status": "limit",
+    "message": "Rate limit exceeded. Please wait X seconds",
+    "data": {
+        "wait_time": 5.5,  # Time in seconds to wait before next request
+        # Additional rate limit metrics depending on monitor type
+    }
+}
+```
+
+### 4. Validation Error Response
+```python
+{
+    "status": "error",
+    "message": "Invalid payload: Missing required parameters: param1, param2",
+    "data": {
+        "missing_params": ["param1", "param2"],
+        "schema": {
+            "param1": str,
+            "param2": int
+        }
+    }
+}
+```
+
+### 5. Authentication Error Response
+```python
+{
+    "status": "error",
+    "message": "Authentication failed: Invalid token",
+    "data": {
+        "error_code": "AUTH_ERROR",
+        "details": "Token expired"
+    }
+}
+```
+
+### 6. Connection Error Response
+```python
+{
+    "status": "error",
+    "message": "Failed to connect to hub: Connection refused",
+    "data": {
+        "error_code": "CONNECTION_ERROR",
+        "retry_count": 3,
+        "next_retry": "2024-03-20T10:00:00Z"
+    }
+}
+```
+
+### 7. Action Not Found Response
+```python
+{
+    "status": "error",
+    "message": "Action 'unknown_action' not found",
+    "data": {
+        "available_actions": ["action1", "action2", "action3"]
+    }
+}
+```
+
+### 8. Advanced Rate Limit Response
+```python
+{
+    "status": "limit",
+    "message": "Rate limit exceeded. Please wait X seconds",
+    "data": {
+        "wait_time": 3.2,  # Time in seconds to wait before next request
+        "metrics": {
+            "call_count": 100,
+            "total_time": 50.5,
+            "total_cpu": 75.2
+        },
+        "is_near_limit": true,
+        "is_critical": false,
+        "call_usage": 0.85,
+        "cpu_usage": 0.75
+    }
+}
+```
+
+### 9. Redis Rate Limit Response
+```python
+{
+    "status": "limit",
+    "message": "Rate limit exceeded. Please wait X seconds",
+    "data": {
+        "wait_time": 15.0,  # Time in seconds to wait before next request
+        "current_count": 95,
+        "limit": 100,
+        "window_size": 60,
+        "window_key": "rate_limit:1234567890"
+    }
+}
+```
+
+### 10. Shared Rate Limit Response
+```python
+{
+    "status": "limit",
+    "message": "Rate limit exceeded. Please wait X seconds",
+    "data": {
+        "wait_time": 10.0,  # Time in seconds to wait before next request
+        "current_count": 98,
+        "limit": 100,
+        "window_size": 60,
+        "providers": ["provider-a", "provider-b"]
+    }
+}
+```
+
+### Response Status Codes
+
+The framework uses the following status codes:
+
+| Status | Description | When Used |
+|--------|-------------|-----------|
+| `success` | Operation completed successfully | When action executes without errors |
+| `error` | General error occurred | For validation, authentication, connection errors |
+| `limit` | Rate limit exceeded | When rate limit is reached |
+
+### Response Data Structure
+
+All responses follow this basic structure:
+```python
+{
+    "status": str,      # Status code (success/error/limit)
+    "message": str,     # Human-readable message
+    "data": dict       # Additional data (optional)
+}
+```
+
+The `data` field is optional and its structure depends on the specific response type and context. For rate limit responses, the `wait_time` field indicates how many seconds you need to wait before making the next request. This value is always a positive number and represents the minimum time to wait to avoid rate limit restrictions.

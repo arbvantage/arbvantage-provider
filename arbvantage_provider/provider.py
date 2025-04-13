@@ -18,7 +18,6 @@ The module handles:
 import grpc
 import json
 import time
-import logging
 import signal
 import backoff
 from typing import Optional, Dict, Any
@@ -29,6 +28,7 @@ from .actions import ActionsRegistry
 from .exceptions import ActionNotFoundError, InvalidPayloadError
 from .schemas import ProviderResponse
 from .rate_limit import RateLimitMonitor, NoRateLimitMonitor, SimpleRateLimitMonitor
+from .logger import ProviderLogger
 
 class Provider:
     """
@@ -48,10 +48,23 @@ class Provider:
         hub_url (str): URL of the Hub service
         execution_timeout (int): Default timeout for task execution in seconds
         running (bool): Flag indicating if the provider is running
-        logger (logging.Logger): Logger instance for the provider
+        logger (ProviderLogger): Logger instance for the provider
         actions (ActionsRegistry): Registry of available actions
         rate_limit_monitor (RateLimitMonitor): Rate limit monitoring implementation
     """
+    
+    # Default rate limit monitor for all instances
+    _default_rate_limit_monitor: Optional[RateLimitMonitor] = None
+    
+    @classmethod
+    def set_default_rate_limit(cls, min_delay: float = 1.0) -> None:
+        """
+        Set default rate limit for all provider instances.
+        
+        Args:
+            min_delay: Minimum delay between calls in seconds
+        """
+        cls._default_rate_limit_monitor = SimpleRateLimitMonitor(min_delay=min_delay)
     
     def __init__(
         self,
@@ -59,7 +72,9 @@ class Provider:
         auth_token: str,
         hub_url: str,
         execution_timeout: int = 1,
-        rate_limit_monitor: Optional[RateLimitMonitor] = None
+        rate_limit_monitor: Optional[RateLimitMonitor] = None,
+        log_file: Optional[str] = None,
+        log_level: str = "INFO"
     ):
         """
         Initialize the provider with required configuration.
@@ -70,20 +85,26 @@ class Provider:
             hub_url (str): URL of the Hub service
             execution_timeout (int, optional): Default timeout for task execution. Defaults to 1.
             rate_limit_monitor (Optional[RateLimitMonitor]): Rate limit monitoring implementation
+            log_file (Optional[str]): Path to log file
+            log_level (str): Logging level (default: INFO)
         """
         self.name = name
         self.auth_token = auth_token
         self.hub_url = hub_url
         self.execution_timeout = execution_timeout
         self.running = True
-        self.logger = logging.getLogger(name.upper())
+        
+        # Initialize logger
+        self.logger = ProviderLogger(
+            name=name,
+            level=log_level,
+            log_file=log_file
+        )
+        
         self.actions = ActionsRegistry()
         
         # Initialize rate limit monitor
-        if rate_limit_monitor is None:
-            self.rate_limit_monitor = NoRateLimitMonitor()
-        else:
-            self.rate_limit_monitor = rate_limit_monitor
+        self.rate_limit_monitor = rate_limit_monitor or self.__class__._default_rate_limit_monitor or NoRateLimitMonitor()
 
     def _create_channel(self):
         """
@@ -102,7 +123,10 @@ class Provider:
             (grpc.RpcError, ConnectionRefusedError),
             max_tries=None,
             max_time=300,
-            on_backoff=lambda details: self.logger.info(f"Trying to connect to hub... (attempt {details['tries']})")
+            on_backoff=lambda details: self.logger.info(
+                "Trying to connect to hub...",
+                attempt=details['tries']
+            )
         )
         def create():
             channel = grpc.insecure_channel(self.hub_url)
@@ -131,26 +155,39 @@ class Provider:
         try:
             action_def = self.actions.get_action(action)
             if not action_def:
+                self.logger.error(
+                    "Action not found",
+                    action=action,
+                    available_actions=list(self.actions.get_actions().keys())
+                )
                 return ProviderResponse(status="error", message=f"Action '{action}' not found").model_dump()
 
             # Validate required parameters for payload if schema exists
-            # If action is required to have payload, we need to validate it
             if hasattr(action_def, 'payload_schema') and action_def.payload_schema:
                 missing_params = [
                     param for param in action_def.payload_schema.keys()
                     if param not in payload
                 ]
                 if missing_params:
+                    self.logger.warning(
+                        "Missing required parameters",
+                        action=action,
+                        missing_params=missing_params
+                    )
                     return ProviderResponse(status="error", message=f"Missing required parameters: {', '.join(missing_params)}").model_dump()
             
             # Validate required parameters for account if schema exists
-            # If action is required to have account, we need to validate it
             if hasattr(action_def, 'account_schema') and action_def.account_schema:
                 missing_account_params = [
                     param for param in action_def.account_schema.keys()
                     if not account or param not in account
                 ]
                 if missing_account_params:
+                    self.logger.warning(
+                        "Missing required account parameters",
+                        action=action,
+                        missing_params=missing_account_params
+                    )
                     return ProviderResponse(status="error", message=f"Missing required account parameters: {', '.join(missing_account_params)}").model_dump()
             
             action_params = {
@@ -173,22 +210,43 @@ class Provider:
                 }
             
             # Execute action and validate response
+            self.logger.info(
+                "Executing action",
+                action=action,
+                params=action_params
+            )
+            
             result = action_def.handler(**action_params)
             
             # Check if result is an instance of ProviderResponse
             if not isinstance(result, ProviderResponse):
                 error_msg = f"Action {action} must return ProviderResponse instance, got {type(result)}"
-                self.logger.error(error_msg)
+                self.logger.error(
+                    "Invalid response type",
+                    action=action,
+                    expected_type="ProviderResponse",
+                    actual_type=str(type(result))
+                )
                 return ProviderResponse(
                     status="error",
                     data=result,
                     message=error_msg
                 ).model_dump()
             
+            self.logger.info(
+                "Action completed successfully",
+                action=action,
+                status=result.status
+            )
+            
             return result.model_dump()
 
         except Exception as e:
-            self.logger.error(f"Error processing task: {e}")
+            self.logger.exception(
+                "Error processing task",
+                action=action,
+                error=str(e)
+            )
             return ProviderResponse(status="error", message=str(e)).model_dump()
 
     def start(self):
@@ -204,17 +262,23 @@ class Provider:
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
         
-        self.logger.info(f"Starting provider worker")
+        self.logger.info("Starting provider worker")
         
         while self.running:
             try:
                 with self._create_channel() as channel:
-                    self.logger.info(f"Successfully connected to HUB {self.hub_url}")
+                    self.logger.info(
+                        "Successfully connected to HUB",
+                        hub_url=self.hub_url
+                    )
                     stub = hub_pb2_grpc.HubStub(channel)
                     self._process_tasks(stub)
             except Exception as e:
                 if self.running:
-                    self.logger.error(f"Unexpected error: {str(e)}", exc_info=True)
+                    self.logger.exception(
+                        "Unexpected error",
+                        error=str(e)
+                    )
                     time.sleep(1)
 
     def _signal_handler(self, signum, frame):
@@ -246,7 +310,28 @@ class Provider:
                 # Check rate limits before making request
                 limits = self.rate_limit_monitor.check_rate_limits()
                 if limits and limits.get("rate_limited"):
-                    self.rate_limit_monitor.handle_throttling(limits["wait_time"])
+                    wait_time = limits.get("wait_time", self.execution_timeout)
+                    self.logger.warning(
+                        "Rate limit exceeded",
+                        wait_time=wait_time
+                    )
+                    self.rate_limit_monitor.handle_throttling(wait_time)
+                    
+                    # Return rate limit response
+                    result = ProviderResponse(
+                        status="limit",
+                        message=f"Rate limit exceeded. Please wait {wait_time} seconds",
+                        data={"wait_time": wait_time}
+                    ).model_dump()
+                    
+                    # Submit rate limit response to Hub
+                    stub.SubmitTaskResult(hub_pb2.TaskResult(
+                        provider=self.name,
+                        auth_token=self.auth_token,
+                        status="limit",
+                        result=json.dumps(result)
+                    ))
+                    continue
                 
                 task = stub.GetTask(hub_pb2.ProviderRequest(
                     provider=self.name,
@@ -258,23 +343,45 @@ class Provider:
                         try:
                             rate_limit_data = json.loads(task.payload.decode('utf-8'))
                             wait_time = rate_limit_data.get("wait_time", self.execution_timeout)
-                            self.logger.warning(f"Rate limit exceeded. Waiting {wait_time} seconds...")
+                            self.logger.warning(
+                                "Rate limit exceeded",
+                                wait_time=wait_time
+                            )
                             self.rate_limit_monitor.handle_throttling(wait_time)
+                            
+                            # Return rate limit response
+                            result = ProviderResponse(
+                                status="limit",
+                                message=f"Rate limit exceeded. Please wait {wait_time} seconds",
+                                data={"wait_time": wait_time}
+                            ).model_dump()
+                            
+                            # Submit rate limit response to Hub
+                            stub.SubmitTaskResult(hub_pb2.TaskResult(
+                                provider=self.name,
+                                auth_token=self.auth_token,
+                                status="limit",
+                                result=json.dumps(result)
+                            ))
                         except json.JSONDecodeError:
                             self.rate_limit_monitor.handle_throttling(self.execution_timeout)
                     else:
                         self.rate_limit_monitor.handle_throttling(self.execution_timeout)
                     continue
 
-                self.logger.info(f"Received task: {task}")
+                self.logger.info(
+                    "Received task",
+                    task_id=task.task_id,
+                    action=task.action.decode('utf-8')
+                )
                 
                 try:
                     payload = json.loads(task.payload.decode('utf-8'))
-                    action = task.action
+                    action = task.action.decode('utf-8')
                     account = task.account
                     
                     result = self.process_task(action, payload, account)
-                    status = "error" if result["status"] == "error" else "success"
+                    status = result["status"]
 
                     # Submit task result back to Hub
                     stub.SubmitTaskResult(hub_pb2.TaskResult(
@@ -288,14 +395,25 @@ class Provider:
                         account=account
                     ))
                     
-                    self.logger.info(f"Task {task.task_id} completed")
+                    self.logger.info(
+                        "Task completed",
+                        task_id=task.task_id,
+                        status=status
+                    )
                     
                 except json.JSONDecodeError as e:
-                    self.logger.error(f"Failed to parse task data: {e}")
+                    self.logger.error(
+                        "Failed to parse task data",
+                        error=str(e)
+                    )
                     continue
 
             except grpc.RpcError as e:
-                self.logger.error(f"gRPC error: {e.details()}")
+                self.logger.error(
+                    "gRPC error",
+                    error=e.details(),
+                    code=e.code()
+                )
                 if e.code() == grpc.StatusCode.UNAUTHENTICATED:
                     self.logger.error("Provider authentication error")
                     return
