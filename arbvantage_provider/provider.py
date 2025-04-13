@@ -28,6 +28,7 @@ from .protos import hub_pb2, hub_pb2_grpc
 from .actions import ActionsRegistry
 from .exceptions import ActionNotFoundError, InvalidPayloadError
 from .schemas import ProviderResponse
+from .rate_limit import RateLimitMonitor, NoRateLimitMonitor, SimpleRateLimitMonitor
 
 class Provider:
     """
@@ -39,6 +40,7 @@ class Provider:
     - Action execution
     - Error handling
     - Graceful shutdown
+    - Rate limiting
     
     Attributes:
         name (str): Unique identifier for the provider
@@ -48,6 +50,7 @@ class Provider:
         running (bool): Flag indicating if the provider is running
         logger (logging.Logger): Logger instance for the provider
         actions (ActionsRegistry): Registry of available actions
+        rate_limit_monitor (RateLimitMonitor): Rate limit monitoring implementation
     """
     
     def __init__(
@@ -55,7 +58,8 @@ class Provider:
         name: str,
         auth_token: str,
         hub_url: str,
-        execution_timeout: int = 1
+        execution_timeout: int = 1,
+        rate_limit_monitor: Optional[RateLimitMonitor] = None
     ):
         """
         Initialize the provider with required configuration.
@@ -65,6 +69,7 @@ class Provider:
             auth_token (str): Authentication token for Hub communication
             hub_url (str): URL of the Hub service
             execution_timeout (int, optional): Default timeout for task execution. Defaults to 1.
+            rate_limit_monitor (Optional[RateLimitMonitor]): Rate limit monitoring implementation
         """
         self.name = name
         self.auth_token = auth_token
@@ -73,6 +78,12 @@ class Provider:
         self.running = True
         self.logger = logging.getLogger(name.upper())
         self.actions = ActionsRegistry()
+        
+        # Initialize rate limit monitor
+        if rate_limit_monitor is None:
+            self.rate_limit_monitor = NoRateLimitMonitor()
+        else:
+            self.rate_limit_monitor = rate_limit_monitor
 
     def _create_channel(self):
         """
@@ -232,6 +243,11 @@ class Provider:
         """
         while self.running:
             try:
+                # Check rate limits before making request
+                limits = self.rate_limit_monitor.check_rate_limits()
+                if limits and limits.get("rate_limited"):
+                    self.rate_limit_monitor.handle_throttling(limits["wait_time"])
+                
                 task = stub.GetTask(hub_pb2.ProviderRequest(
                     provider=self.name,
                     auth_token=self.auth_token
@@ -243,11 +259,11 @@ class Provider:
                             rate_limit_data = json.loads(task.payload.decode('utf-8'))
                             wait_time = rate_limit_data.get("wait_time", self.execution_timeout)
                             self.logger.warning(f"Rate limit exceeded. Waiting {wait_time} seconds...")
-                            time.sleep(wait_time)
+                            self.rate_limit_monitor.handle_throttling(wait_time)
                         except json.JSONDecodeError:
-                            time.sleep(self.execution_timeout)
+                            self.rate_limit_monitor.handle_throttling(self.execution_timeout)
                     else:
-                        time.sleep(self.execution_timeout)
+                        self.rate_limit_monitor.handle_throttling(self.execution_timeout)
                     continue
 
                 self.logger.info(f"Received task: {task}")
