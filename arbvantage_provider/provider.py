@@ -123,15 +123,18 @@ class Provider:
 
     def _handle_response(self, response: ProviderResponse) -> Dict[str, Any]:
         """
-        Helper method to convert ProviderResponse to dictionary.
+        Helper method to convert ProviderResponse to dictionary and wrap data field with provider name.
         
         Args:
             response (ProviderResponse): Response to convert
             
         Returns:
-            Dict[str, Any]: Converted response
+            Dict[str, Any]: Converted response with data field wrapped with provider name
         """
-        return response.model_dump()
+        response_dict = response.model_dump()
+        if "data" in response_dict:
+            response_dict["data"] = {self.name: response_dict["data"]}
+        return response_dict
 
     def process_task(self, action: str, payload: Dict, account: Optional[str] = None) -> Dict[str, Any]:
         """
