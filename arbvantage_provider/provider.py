@@ -27,7 +27,7 @@ from .protos import hub_pb2, hub_pb2_grpc
 from .actions import ActionsRegistry
 from .exceptions import ActionNotFoundError, InvalidPayloadError
 from .schemas import ProviderResponse
-from .rate_limit import RateLimitMonitor, NoRateLimitMonitor, SimpleRateLimitMonitor
+from .rate_limit import RateLimitMonitor, NoRateLimitMonitor, TimeBasedRateLimitMonitor
 from .logger import ProviderLogger
 
 class Provider:
@@ -57,14 +57,14 @@ class Provider:
     _default_rate_limit_monitor: Optional[RateLimitMonitor] = None
     
     @classmethod
-    def set_default_rate_limit(cls, min_delay: float = 1.0) -> None:
+    def set_default_rate_limit(cls) -> None:
         """
         Set default rate limit for all provider instances.
         
         Args:
             min_delay: Minimum delay between calls in seconds
         """
-        cls._default_rate_limit_monitor = SimpleRateLimitMonitor(min_delay=min_delay)
+        cls._default_rate_limit_monitor = NoRateLimitMonitor()
     
     def __init__(
         self,
