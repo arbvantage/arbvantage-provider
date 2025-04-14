@@ -4,7 +4,8 @@ from unittest.mock import MagicMock, patch
 from arbvantage_provider.rate_limit import (
     TimeBasedRateLimitMonitor,
     AdvancedRateLimitMonitor,
-    CustomRateLimitMonitor
+    CustomRateLimitMonitor,
+    NoRateLimitMonitor
 )
 from arbvantage_provider.rate_limit_provider import RateLimitProvider
 
@@ -110,6 +111,40 @@ class TestRateLimit(unittest.TestCase):
         time.sleep(0.05)
         result = provider.make_safe_request(self.mock_request)
         self.assertEqual(result, "success")
+
+    def test_no_rate_limit(self):
+        monitor = NoRateLimitMonitor()
+        
+        # Multiple requests should always succeed
+        for _ in range(10):
+            result = monitor.make_safe_request(self.mock_request)
+            self.assertEqual(result, "success")
+        
+        # No delay between requests
+        start_time = time.time()
+        for _ in range(100):
+            monitor.make_safe_request(self.mock_request)
+        end_time = time.time()
+        
+        # Should complete quickly (less than 0.1 seconds)
+        self.assertLess(end_time - start_time, 0.1)
+
+    def test_no_rate_limit_provider(self):
+        provider = RateLimitProvider(monitor_class=NoRateLimitMonitor)
+        
+        # Multiple requests should always succeed
+        for _ in range(10):
+            result = provider.make_safe_request(self.mock_request)
+            self.assertEqual(result, "success")
+        
+        # No delay between requests
+        start_time = time.time()
+        for _ in range(100):
+            provider.make_safe_request(self.mock_request)
+        end_time = time.time()
+        
+        # Should complete quickly (less than 0.1 seconds)
+        self.assertLess(end_time - start_time, 0.1)
 
 if __name__ == "__main__":
     unittest.main() 

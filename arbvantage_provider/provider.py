@@ -27,7 +27,7 @@ from .protos import hub_pb2, hub_pb2_grpc
 from .actions import ActionsRegistry
 from .exceptions import ActionNotFoundError, InvalidPayloadError
 from .schemas import ProviderResponse
-from .rate_limit import RateLimitMonitor, NoRateLimitMonitor, TimeBasedRateLimitMonitor
+from .rate_limit import RateLimitMonitor, NoRateLimitMonitor, TimeBasedRateLimitMonitor, AdvancedRateLimitMonitor, CustomRateLimitMonitor   
 from .logger import ProviderLogger
 
 class Provider:

@@ -5,6 +5,14 @@ This module provides several rate limiting strategies:
 1. Time-based rate limiting with fixed delays
 2. Advanced rate limiting with warning thresholds
 3. Custom rate limiting with sliding window approach
+4. No rate limiting (pass-through implementation)
+
+The rate limiting system is designed to be:
+- Thread-safe: All operations are protected by locks
+- Extensible: Easy to add new rate limiting strategies
+- Configurable: Flexible parameters for each strategy
+- Observable: Detailed logging and metrics
+- Performant: Minimal overhead when not rate limited
 """
 
 from abc import ABC, abstractmethod
@@ -20,6 +28,14 @@ class RateLimitMonitor(ABC):
     """
     Abstract base class for rate limit monitors.
     Implement this class to create custom rate limiting strategies.
+    
+    This class defines the interface that all rate limit monitors must implement:
+    - check_rate_limits(): Check if rate limit is exceeded
+    - handle_throttling(): Handle throttling when limit is exceeded
+    - make_safe_request(): Execute request with rate limit consideration
+    
+    Subclasses should implement these methods according to their specific
+    rate limiting strategy while maintaining thread safety.
     """
     
     @abstractmethod
@@ -27,8 +43,18 @@ class RateLimitMonitor(ABC):
         """
         Check if rate limit is exceeded.
         
+        This method should:
+        1. Check current usage against limits
+        2. Return None if within limits
+        3. Return rate limit info if exceeded
+        
         Returns:
             Optional[Dict[str, Any]]: Rate limit information if exceeded, None otherwise
+            The dictionary should contain at least:
+            - rate_limited: bool
+            - wait_time: float (seconds to wait)
+            - current_count: int
+            - limit: int
         """
         pass
         
@@ -36,6 +62,11 @@ class RateLimitMonitor(ABC):
     def handle_throttling(self, wait_time: int) -> None:
         """
         Handle throttling when rate limit is exceeded.
+        
+        This method should:
+        1. Implement the waiting strategy
+        2. Log throttling events
+        3. Update internal state if needed
         
         Args:
             wait_time (int): Time to wait in seconds
@@ -46,6 +77,12 @@ class RateLimitMonitor(ABC):
     def make_safe_request(self, request_func: callable, *args, **kwargs) -> Any:
         """
         Execute request with rate limit consideration.
+        
+        This method should:
+        1. Check rate limits
+        2. Handle throttling if needed
+        3. Execute the request
+        4. Update internal state
         
         Args:
             request_func (callable): Function to execute
@@ -219,5 +256,71 @@ class CustomRateLimitMonitor(RateLimitMonitor):
             self.handle_throttling(limits["wait_time"])
         return request_func(*args, **kwargs)
 
-# Default rate limit monitor
-DEFAULT_RATE_LIMIT_MONITOR = TimeBasedRateLimitMonitor() 
+class NoRateLimitMonitor(RateLimitMonitor):
+    """
+    Rate limit monitor that never limits requests.
+    This is a pass-through implementation that allows all requests.
+    
+    This monitor is useful when:
+    1. No rate limiting is needed
+    2. Rate limiting is handled externally
+    3. Testing and development
+    4. High-performance scenarios
+    
+    The monitor implements all required methods but:
+    - Never returns rate limit information
+    - Never throttles requests
+    - Simply passes through all requests
+    
+    This is the default monitor for new providers and actions.
+    """
+    
+    def __init__(self):
+        """
+        Initialize the no-rate-limit monitor.
+        
+        This implementation doesn't require any configuration or state.
+        It's designed to be lightweight and have zero overhead.
+        """
+        pass
+        
+    def check_rate_limits(self) -> Optional[Dict[str, Any]]:
+        """
+        Check if rate limit is exceeded.
+        
+        This implementation never limits requests, so always returns None.
+        It's a pure pass-through with no state or checks.
+        
+        Returns:
+            None: Always returns None to indicate no rate limiting
+        """
+        return None
+        
+    def handle_throttling(self, wait_time: int) -> None:
+        """
+        Handle throttling when rate limit is exceeded.
+        
+        This implementation does nothing as there are no rate limits.
+        The wait_time parameter is ignored.
+        
+        Args:
+            wait_time (int): Time to wait in seconds (ignored)
+        """
+        pass
+        
+    def make_safe_request(self, request_func: callable, *args, **kwargs) -> Any:
+        """
+        Execute request with rate limit consideration.
+        
+        This implementation simply executes the request without any
+        rate limiting or throttling. It's a pure pass-through.
+        
+        Args:
+            request_func (callable): Function to execute
+            *args: Positional arguments for the function
+            **kwargs: Keyword arguments for the function
+            
+        Returns:
+            Any: Result of the request function
+        """
+        return request_func(*args, **kwargs) 

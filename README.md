@@ -320,7 +320,39 @@ The rate limiting system provides flexible and configurable rate limiting functi
 
 ## Types of Rate Limiting
 
-### 1. Time-Based Rate Limiting
+### 1. No Rate Limiting
+Pass-through implementation that allows all requests without any restrictions.
+
+```python
+from arbvantage_provider.rate_limit import NoRateLimitMonitor
+
+# Default monitor for new providers
+provider = Provider(
+    name="my-provider",
+    auth_token="my-token",
+    hub_url="hub-grpc:50051"
+)
+
+# Explicitly set no rate limiting
+provider = Provider(
+    name="my-provider",
+    auth_token="my-token",
+    hub_url="hub-grpc:50051",
+    rate_limit_monitor=NoRateLimitMonitor()
+)
+
+# For specific actions
+@provider.actions.register(
+    name="unlimited_action",
+    description="Action without rate limits",
+    payload_schema={"param": str},
+    rate_limit_monitor=NoRateLimitMonitor()
+)
+def unlimited_action(param: str) -> dict:
+    return {"result": "success"}
+```
+
+### 2. Time-Based Rate Limiting
 Simple time-based approach that ensures minimum delay between requests.
 
 ```python
@@ -332,7 +364,7 @@ monitor = TimeBasedRateLimitMonitor(
 )
 ```
 
-### 2. Advanced Rate Limiting
+### 3. Advanced Rate Limiting
 Includes warning and critical thresholds with logging.
 
 ```python
@@ -346,7 +378,7 @@ monitor = AdvancedRateLimitMonitor(
 )
 ```
 
-### 3. Custom Rate Limiting
+### 4. Custom Rate Limiting
 Sliding window approach for more granular control.
 
 ```python
@@ -365,8 +397,12 @@ monitor = CustomRateLimitMonitor(
 ```python
 from arbvantage_provider.rate_limit_provider import RateLimitProvider
 
-# Create provider with default time-based rate limiting
+# Create provider with no rate limiting (default)
+provider = RateLimitProvider()
+
+# Create provider with time-based rate limiting
 provider = RateLimitProvider(
+    monitor_class=TimeBasedRateLimitMonitor,
     min_delay=1.0,
     max_calls_per_second=1
 )
@@ -417,6 +453,7 @@ When rate limits are exceeded, the system returns a dictionary with the followin
 ## Best Practices
 
 1. **Choose Appropriate Strategy**
+   - Use NoRateLimitMonitor when no limits are needed
    - Use time-based for simple APIs
    - Use advanced for APIs with strict limits
    - Use custom for complex rate limiting needs
@@ -444,6 +481,7 @@ The rate limiting system is implemented using:
 - Flexible monitoring strategies
 - Configurable thresholds and limits
 - Detailed logging and error reporting
+- Zero-overhead pass-through when no limits are needed
 
 ## Response Formats
 

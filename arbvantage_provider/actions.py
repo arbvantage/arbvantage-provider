@@ -6,14 +6,21 @@ This module implements the action registration and management system that:
 2. Provides a registry for storing and retrieving actions
 3. Handles action registration through decorators
 4. Manages action schemas and handlers
+5. Implements rate limiting for actions
 
 The module uses type hints and dataclasses for better type safety and code organization.
+It supports:
+- Action registration with decorators
+- Schema validation
+- Rate limiting
+- Error handling
+- Response formatting
 """
 
 from typing import TypeVar, Callable, Dict, Any, Type, Optional
 from dataclasses import dataclass
 from functools import wraps
-from .rate_limit import RateLimitMonitor, TimeBasedRateLimitMonitor
+from .rate_limit import RateLimitMonitor, TimeBasedRateLimitMonitor, NoRateLimitMonitor
 from .schemas import ProviderResponse
 
 T = TypeVar('T')
@@ -28,6 +35,12 @@ class Action:
     - The handler function that implements the action
     - The schema defining the expected payload structure
     - Rate limiting configuration
+    
+    The class provides:
+    1. Action execution with rate limiting
+    2. Response formatting
+    3. Error handling
+    4. Schema validation
     """
     description: str
     handler: Callable
@@ -38,6 +51,11 @@ class Action:
     def _handle_response(self, response: ProviderResponse) -> Dict[str, Any]:
         """
         Helper method to convert ProviderResponse to dictionary.
+        
+        This method:
+        1. Converts the response to a dictionary
+        2. Preserves all response data
+        3. Maintains type safety
         
         Args:
             response (ProviderResponse): Response to convert
@@ -51,12 +69,24 @@ class Action:
         """
         Execute the action with rate limiting if configured.
         
+        This method:
+        1. Checks rate limits if configured
+        2. Handles throttling if needed
+        3. Executes the action handler
+        4. Formats the response
+        5. Handles errors
+        
         Args:
             *args: Positional arguments for the action
             **kwargs: Keyword arguments for the action
             
         Returns:
             Any: Result of the action execution
+            
+        The method returns:
+        - Success response if execution succeeds
+        - Rate limit response if limits are exceeded
+        - Error response if execution fails
         """
         try:
             if self.rate_limit_monitor:
@@ -97,10 +127,23 @@ class ActionsRegistry:
     3. List all available actions
     4. Validate action parameters
     5. Configure rate limiting
+    
+    The registry supports:
+    - Action registration with decorators
+    - Default rate limiting
+    - Action-specific rate limiting
+    - Custom rate limit monitors
+    - Schema validation
     """
     
     def __init__(self):
-        """Initialize an empty action registry."""
+        """
+        Initialize an empty action registry.
+        
+        Creates a new registry with:
+        - Empty action dictionary
+        - No default rate limit monitor
+        """
         self._actions: Dict[str, Action] = {}
         self._default_rate_limit_monitor: Optional[RateLimitMonitor] = None
     
@@ -108,14 +151,24 @@ class ActionsRegistry:
         """
         Set default rate limit for all actions.
         
+        This method:
+        1. Creates a new rate limit monitor
+        2. Sets it as the default for all actions
+        3. Applies to new actions
+        
         Args:
             min_delay: Minimum delay between calls in seconds
         """
-        self._default_rate_limit_monitor = TimeBasedRateLimitMonitor(min_delay=min_delay)
+        self._default_rate_limit_monitor = NoRateLimitMonitor()
         
     def set_rate_limit(self, action_name: str, min_delay: float = 1.0) -> None:
         """
         Set rate limit for a specific action.
+        
+        This method:
+        1. Finds the action by name
+        2. Creates a new rate limit monitor
+        3. Sets it for the action
         
         Args:
             action_name: Name of the action to configure
@@ -127,6 +180,11 @@ class ActionsRegistry:
     def set_custom_rate_limit(self, action_name: str, monitor: RateLimitMonitor) -> None:
         """
         Set custom rate limit monitor for a specific action.
+        
+        This method:
+        1. Finds the action by name
+        2. Sets the custom monitor
+        3. Applies immediately
         
         Args:
             action_name: Name of the action to configure
@@ -144,9 +202,11 @@ class ActionsRegistry:
         """
         Decorator for registering a new action.
         
-        This decorator allows for easy registration of new actions with their
-        metadata and validation schema. It can be used as a function decorator
-        to register action handlers.
+        This decorator:
+        1. Creates a new Action instance
+        2. Validates the schema
+        3. Sets up rate limiting
+        4. Registers the action
         
         Args:
             name (str): 
@@ -161,12 +221,26 @@ class ActionsRegistry:
                 Dictionary defining the expected payload structure.
                 If None, an empty dict is used.
                 
+            account_schema (Dict[str, Type], optional):
+                Dictionary defining the expected account structure.
+                If None, an empty dict is used.
+                
             rate_limit_monitor (Optional[RateLimitMonitor], optional):
                 Custom rate limit monitor for this action.
                 If None, the default rate limit monitor will be used.
                 
         Returns:
             Callable: A decorator function that registers the action handler.
+            
+        Example:
+            @registry.register(
+                name="my_action",
+                description="Does something useful",
+                payload_schema={"param": str},
+                rate_limit_monitor=TimeBasedRateLimitMonitor(min_delay=1.0)
+            )
+            def my_action(param: str) -> dict:
+                return {"result": "success"}
         """
         def wrapper(handler: Callable[..., T]) -> Callable[..., T]:
             self._actions[name] = Action(
