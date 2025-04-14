@@ -372,12 +372,12 @@ class Provider:
                 self.logger.info(
                     "Received task",
                     task_id=task.task_id,
-                    action=task.action.decode('utf-8')
+                    action=task.action
                 )
                 
                 try:
                     payload = json.loads(task.payload.decode('utf-8'))
-                    action = task.action.decode('utf-8')
+                    action = task.action
                     account = task.account
                     
                     result = self.process_task(action, payload, account)

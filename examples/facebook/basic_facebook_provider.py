@@ -70,6 +70,7 @@ class FacebookRateLimitMonitor(AdvancedRateLimitMonitor):
         super().__init__(**kwargs)
         self.access_token = None
         self.logger = ProviderLogger("facebook-rate-limit")
+        self._is_active = False
         
     def set_access_token(self, access_token: str) -> None:
         """
@@ -79,6 +80,7 @@ class FacebookRateLimitMonitor(AdvancedRateLimitMonitor):
             access_token (str): Valid Facebook API access token with required permissions
         """
         self.access_token = access_token
+        self._is_active = True
         
     def check_rate_limits(self) -> Optional[Dict[str, Any]]:
         """
@@ -102,6 +104,9 @@ class FacebookRateLimitMonitor(AdvancedRateLimitMonitor):
                 "time_remaining": int    # Time until limits reset
             }
         """
+        if not self._is_active:
+            return None
+            
         if not self.access_token:
             self.logger.warning("Access token not set")
             return None
@@ -140,7 +145,7 @@ class FacebookRateLimitMonitor(AdvancedRateLimitMonitor):
                         "total_calls": total_calls,
                         "time_remaining": time_remaining
                     }
-                ).model_dump()
+                )
             
             return None
             
@@ -153,7 +158,7 @@ class FacebookRateLimitMonitor(AdvancedRateLimitMonitor):
                 status="error",
                 message="Error checking rate limits",
                 data={"error": str(e)}
-            ).model_dump()
+            )
 
 class BasicFacebookProvider(Provider):
     """
