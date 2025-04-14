@@ -28,14 +28,14 @@ def get_business_info(payload: Dict[str, Any]) -> Dict[str, Any]:
                 status="error",
                 message="Missing access token in account information",
                 data={"error": "missing_access_token"}
-            ).model_dump()
+            )
             
         if not payload["account"].get("business_id"):
             return ProviderResponse(
                 status="error",
                 message="Missing business ID in account information",
                 data={"error": "missing_business_id"}
-            ).model_dump()
+            )
             
         # Initialize Facebook API
         FacebookAdsApi.init(access_token=payload["account"]["access_token"])
@@ -63,7 +63,7 @@ def get_business_info(payload: Dict[str, Any]) -> Dict[str, Any]:
                 "business_city": account_info.get("business_city"),
                 "business_country": account_info.get("business_country_code")
             }
-        ).model_dump()
+        )
         
     except FacebookRequestError as e:
         if e.api_error_code() == 4:  # API Throttling
@@ -74,7 +74,7 @@ def get_business_info(payload: Dict[str, Any]) -> Dict[str, Any]:
                     "error_code": e.api_error_code(),
                     "error": str(e)
                 }
-            ).model_dump()
+            )
             
         return ProviderResponse(
             status="error",
@@ -83,11 +83,11 @@ def get_business_info(payload: Dict[str, Any]) -> Dict[str, Any]:
                 "error_code": e.api_error_code(),
                 "error": str(e)
             }
-        ).model_dump()
+        )
         
     except Exception as e:
         return ProviderResponse(
             status="error",
             message="Unexpected error getting business info",
             data={"error": str(e)}
-        ).model_dump() 
+        ) 
