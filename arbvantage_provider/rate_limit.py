@@ -1,268 +1,223 @@
 """
-Rate Limit Support for Providers
+Rate limiting implementation for the provider framework.
 
-This module adds optional rate limit support to the base Provider class.
-It provides an abstract interface for rate limit monitoring and handling,
-but allows providers to work without rate limit monitoring if needed.
+This module provides several rate limiting strategies:
+1. Time-based rate limiting with fixed delays
+2. Advanced rate limiting with warning thresholds
+3. Custom rate limiting with sliding window approach
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, Union
-import logging
-import os
+from typing import Dict, Any, Optional
 import time
-from datetime import datetime
-import pytz
+import threading
+from datetime import datetime, timezone
+import logging
 
 logger = logging.getLogger(__name__)
 
 class RateLimitMonitor(ABC):
     """
-    Abstract base class for rate limit monitoring
-    
-    This class defines the interface for rate limit monitoring implementations.
-    Each provider can implement its own monitoring logic.
+    Abstract base class for rate limit monitors.
+    Implement this class to create custom rate limiting strategies.
     """
     
     @abstractmethod
     def check_rate_limits(self) -> Optional[Dict[str, Any]]:
         """
-        Check current rate limits
+        Check if rate limit is exceeded.
         
         Returns:
-            Dictionary containing rate limit information with the following structure:
-            {
-                "wait_time": float,  # Time to wait in seconds
-                "rate_limited": bool,  # Whether rate limit is exceeded
-                "message": str,  # Optional message describing the limit
-                "data": Dict[str, Any]  # Optional additional data
-            }
-            or None if check failed
+            Optional[Dict[str, Any]]: Rate limit information if exceeded, None otherwise
         """
         pass
         
     @abstractmethod
-    def handle_throttling(self, wait_time: int = 60) -> None:
+    def handle_throttling(self, wait_time: int) -> None:
         """
-        Handle rate limit exceeded
+        Handle throttling when rate limit is exceeded.
         
         Args:
-            wait_time: Time to wait in seconds when limits are exceeded
+            wait_time (int): Time to wait in seconds
         """
         pass
         
     @abstractmethod
     def make_safe_request(self, request_func: callable, *args, **kwargs) -> Any:
         """
-        Make a request with rate limit consideration
+        Execute request with rate limit consideration.
         
         Args:
-            request_func: Function to execute
+            request_func (callable): Function to execute
             *args: Positional arguments for the function
             **kwargs: Keyword arguments for the function
             
         Returns:
-            Result of the request function
+            Any: Result of the request function
         """
         pass
-
-class NoRateLimitMonitor(RateLimitMonitor):
-    """
-    Dummy rate limit monitor that does nothing
-    
-    This class implements the RateLimitMonitor interface but performs no actual
-    rate limit monitoring. It can be used by providers that don't need rate limit handling.
-    """
-    
-    def check_rate_limits(self) -> Optional[Dict[str, Any]]:
-        """No rate limit checking"""
-        return None
-        
-    def handle_throttling(self, wait_time: int = 60) -> None:
-        """No throttling handling"""
-        pass
-        
-    def make_safe_request(self, request_func: callable, *args, **kwargs) -> Any:
-        """Just execute the request without any rate limit handling"""
-        return request_func(*args, **kwargs)
 
 class TimeBasedRateLimitMonitor(RateLimitMonitor):
     """
-    Rate limit monitor that uses time-based throttling
-    
-    This implementation uses a time-based approach to rate limiting,
-    ensuring a minimum delay between consecutive requests.
+    Simple time-based rate limit monitor.
+    Uses fixed delays between requests.
     """
     
-    def __init__(self, min_delay: float = 1.0, timezone: str = 'UTC'):
+    def __init__(self, min_delay: float = 1.0, max_calls_per_second: int = 1, timezone: str = "UTC"):
         """
-        Initialize the time-based rate limit monitor
+        Initialize time-based rate limit monitor.
         
         Args:
-            min_delay: Minimum delay between requests in seconds
-            timezone: Timezone string (e.g. 'UTC', 'Europe/Moscow', 'America/New_York')
+            min_delay (float): Minimum delay between requests in seconds
+            max_calls_per_second (int): Maximum number of calls per second
+            timezone (str): Timezone for rate limiting
         """
         self.min_delay = min_delay
-        self.last_request_time = 0
-        self.timezone = pytz.timezone(timezone)
-        
-    def _get_current_time(self) -> float:
-        """Get current time in seconds since epoch in specified timezone"""
-        return datetime.now(self.timezone).timestamp()
+        self.max_calls_per_second = max_calls_per_second
+        self.timezone = timezone
+        self._last_request_time = 0
+        self._lock = threading.Lock()
         
     def check_rate_limits(self) -> Optional[Dict[str, Any]]:
-        """Check if we need to wait before next request"""
-        current_time = self._get_current_time()
-        time_since_last = current_time - self.last_request_time
+        current_time = time.time()
+        time_since_last = current_time - self._last_request_time
         
         if time_since_last < self.min_delay:
-            wait_time = self.min_delay - time_since_last
             return {
-                "wait_time": wait_time,
                 "rate_limited": True,
-                "message": f"Rate limit exceeded. Please wait {wait_time:.2f} seconds",
-                "data": {
-                    "min_delay": self.min_delay,
-                    "time_since_last": time_since_last,
-                    "timezone": str(self.timezone)
-                }
+                "wait_time": self.min_delay - time_since_last,
+                "current_count": 1,
+                "limit": self.max_calls_per_second
             }
+            
         return None
         
-    def handle_throttling(self, wait_time: int = 60) -> None:
-        """Wait for the specified time"""
+    def handle_throttling(self, wait_time: int) -> None:
         time.sleep(wait_time)
         
     def make_safe_request(self, request_func: callable, *args, **kwargs) -> Any:
-        """Execute request with rate limit consideration"""
-        limits = self.check_rate_limits()
-        if limits and limits.get("rate_limited"):
-            self.handle_throttling(limits["wait_time"])
-            
-        result = request_func(*args, **kwargs)
-        self.last_request_time = self._get_current_time()
-        return result
+        with self._lock:
+            limits = self.check_rate_limits()
+            if limits and limits.get("rate_limited"):
+                self.handle_throttling(limits["wait_time"])
+                
+            self._last_request_time = time.time()
+            return request_func(*args, **kwargs)
 
 class AdvancedRateLimitMonitor(RateLimitMonitor):
     """
-    Advanced rate limit monitor with multiple metrics tracking
-    
-    This implementation provides sophisticated rate limiting capabilities similar to major APIs like Facebook.
-    It can track multiple metrics (calls, CPU, time) and handle complex throttling scenarios.
+    Advanced rate limit monitor with warning thresholds.
+    Provides early warnings when approaching rate limits.
     """
     
-    def __init__(self, 
-                 min_delay: float = 1.0,
-                 max_calls_per_second: int = 2,
-                 warning_threshold: float = 0.8,
-                 critical_threshold: float = 0.9,
-                 timezone: str = 'UTC'):
+    def __init__(
+        self,
+        min_delay: float = 1.0,
+        max_calls_per_second: int = 1,
+        warning_threshold: float = 0.8,
+        critical_threshold: float = 0.9
+    ):
         """
-        Initialize the advanced rate limit monitor
+        Initialize advanced rate limit monitor.
         
         Args:
-            min_delay: Minimum delay between requests in seconds
-            max_calls_per_second: Maximum number of calls allowed per second
-            warning_threshold: Threshold for warning level (0.0 to 1.0)
-            critical_threshold: Threshold for critical level (0.0 to 1.0)
-            timezone: Timezone string (e.g. 'UTC', 'Europe/Moscow', 'America/New_York')
+            min_delay (float): Minimum delay between requests
+            max_calls_per_second (int): Maximum calls per second
+            warning_threshold (float): Percentage of limit that triggers warning
+            critical_threshold (float): Percentage of limit that triggers critical alert
         """
         self.min_delay = min_delay
         self.max_calls_per_second = max_calls_per_second
         self.warning_threshold = warning_threshold
         self.critical_threshold = critical_threshold
-        self.timezone = pytz.timezone(timezone)
-        
-        self.last_request_time = 0
-        self.call_count = 0
-        self.metrics = {
-            'call_count': 0,
-            'total_time': 0,
-            'total_cpu': 0
-        }
-        
-    def _get_current_time(self) -> float:
-        """Get current time in seconds since epoch in specified timezone"""
-        return datetime.now(self.timezone).timestamp()
+        self._request_count = 0
+        self._window_start = time.time()
+        self._lock = threading.Lock()
         
     def check_rate_limits(self) -> Optional[Dict[str, Any]]:
-        """
-        Check current rate limits with detailed metrics
+        current_time = time.time()
+        window_duration = current_time - self._window_start
         
-        Returns:
-            Dictionary containing detailed rate limit information or None if check failed
-        """
-        current_time = self._get_current_time()
-        time_since_last = current_time - self.last_request_time
+        if window_duration >= 1.0:
+            self._request_count = 0
+            self._window_start = current_time
+            
+        self._request_count += 1
+        rate = self._request_count / window_duration if window_duration > 0 else 0
         
-        # Calculate usage percentages
-        call_usage = self.metrics['call_count'] / 100  # Assuming 100 as max calls
-        cpu_usage = self.metrics['total_cpu'] / 100    # Assuming 100 as max CPU
-        
-        # Check if we're approaching limits
-        is_near_limit = (call_usage > self.warning_threshold or 
-                        cpu_usage > self.warning_threshold)
-        
-        # Check if we've exceeded critical limits
-        is_critical = (call_usage > self.critical_threshold or 
-                      cpu_usage > self.critical_threshold)
-        
-        if time_since_last < self.min_delay or is_critical:
-            wait_time = max(self.min_delay - time_since_last, 1.0)
+        if rate >= self.max_calls_per_second:
             return {
-                "wait_time": wait_time,
                 "rate_limited": True,
-                "message": f"Rate limit exceeded. Please wait {wait_time:.2f} seconds",
-                "data": {
-                    "metrics": self.metrics,
-                    "is_near_limit": is_near_limit,
-                    "is_critical": is_critical,
-                    "call_usage": call_usage,
-                    "cpu_usage": cpu_usage,
-                    "timezone": str(self.timezone)
-                }
+                "wait_time": 1.0,
+                "current_count": self._request_count,
+                "limit": self.max_calls_per_second,
+                "rate": rate
             }
+            
+        if rate >= self.max_calls_per_second * self.critical_threshold:
+            logger.warning(f"Critical rate limit threshold reached: {rate:.2f} requests/second")
+        elif rate >= self.max_calls_per_second * self.warning_threshold:
+            logger.warning(f"Warning rate limit threshold reached: {rate:.2f} requests/second")
+            
         return None
         
-    def handle_throttling(self, wait_time: int = 60) -> None:
-        """
-        Handle rate limit exceeded with adaptive waiting
-        
-        Args:
-            wait_time: Base time to wait in seconds when limits are exceeded
-        """
-        # Reset metrics after throttling
-        self.metrics = {
-            'call_count': 0,
-            'total_time': 0,
-            'total_cpu': 0
-        }
+    def handle_throttling(self, wait_time: int) -> None:
         time.sleep(wait_time)
         
     def make_safe_request(self, request_func: callable, *args, **kwargs) -> Any:
+        with self._lock:
+            limits = self.check_rate_limits()
+            if limits and limits.get("rate_limited"):
+                self.handle_throttling(limits["wait_time"])
+            return request_func(*args, **kwargs)
+
+class CustomRateLimitMonitor(RateLimitMonitor):
+    """
+    Custom rate limit monitor with sliding window approach.
+    Provides more granular control over rate limiting.
+    """
+    
+    def __init__(self, window_size: int = 60, max_requests: int = 100):
         """
-        Execute request with advanced rate limit consideration
+        Initialize custom rate limit monitor.
         
         Args:
-            request_func: Function to execute
-            *args: Positional arguments for the function
-            **kwargs: Keyword arguments for the function
-            
-        Returns:
-            Result of the request function
+            window_size (int): Size of the sliding window in seconds
+            max_requests (int): Maximum number of requests per window
         """
+        self.window_size = window_size
+        self.max_requests = max_requests
+        self._requests = []
+        self._lock = threading.Lock()
+        
+    def check_rate_limits(self) -> Optional[Dict[str, Any]]:
+        current_time = time.time()
+        
+        with self._lock:
+            # Remove old requests
+            self._requests = [t for t in self._requests if current_time - t < self.window_size]
+            
+            if len(self._requests) >= self.max_requests:
+                oldest_request = self._requests[0]
+                wait_time = self.window_size - (current_time - oldest_request)
+                return {
+                    "rate_limited": True,
+                    "wait_time": wait_time,
+                    "current_count": len(self._requests),
+                    "limit": self.max_requests
+                }
+                
+            self._requests.append(current_time)
+            return None
+            
+    def handle_throttling(self, wait_time: int) -> None:
+        time.sleep(wait_time)
+        
+    def make_safe_request(self, request_func: callable, *args, **kwargs) -> Any:
         limits = self.check_rate_limits()
         if limits and limits.get("rate_limited"):
             self.handle_throttling(limits["wait_time"])
-            
-        start_time = self._get_current_time()
-        result = request_func(*args, **kwargs)
-        end_time = self._get_current_time()
-        
-        # Update metrics
-        self.metrics['call_count'] += 1
-        self.metrics['total_time'] += end_time - start_time
-        self.metrics['total_cpu'] += 0.1  # Simplified CPU usage estimation
-        
-        self.last_request_time = end_time
-        return result 
+        return request_func(*args, **kwargs)
+
+# Default rate limit monitor
+DEFAULT_RATE_LIMIT_MONITOR = TimeBasedRateLimitMonitor() 

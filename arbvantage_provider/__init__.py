@@ -16,7 +16,7 @@ from .protos import hub_pb2, hub_pb2_grpc
 from .schemas import ProviderResponse
 from .rate_limit import RateLimitMonitor, NoRateLimitMonitor, TimeBasedRateLimitMonitor, AdvancedRateLimitMonitor
 
-__version__ = "1.0.4"
+__version__ = "1.0.5"
 
 __all__ = [
     'Provider',

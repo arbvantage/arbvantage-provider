@@ -314,636 +314,136 @@ async def async_action(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 ## Rate Limiting
 
-### Basic Rate Limiting
-```python
-@self.actions.register(
-    name="limited_action",
-    description="Action with rate limiting",
-    payload_schema={"param": str},
-    rate_limit_monitor=TimeBasedRateLimitMonitor(
-        min_delay=1.0,
-        timezone="UTC"
-    )
-)
-def limited_action(payload: Dict[str, Any]) -> Dict[str, Any]:
-    return {"result": "success"}
-```
+## Overview
 
-### Advanced Rate Limiting
-```python
-@self.actions.register(
-    name="advanced_action",
-    description="Action with advanced rate limiting",
-    payload_schema={"param": str},
-    rate_limit_monitor=AdvancedRateLimitMonitor(
-        requests_per_minute=60,
-        burst_size=10,
-        timezone="Europe/Moscow"
-    )
-)
-def advanced_action(payload: Dict[str, Any]) -> Dict[str, Any]:
-    return {"result": "success"}
-```
+The rate limiting system provides flexible and configurable rate limiting functionality for API requests. It supports multiple strategies and can be easily extended.
 
-### Custom Rate Limit Monitor
+## Types of Rate Limiting
+
+### 1. Time-Based Rate Limiting
+Simple time-based approach that ensures minimum delay between requests.
 
 ```python
-class CustomRateLimitMonitor(RateLimitMonitor):
-    def __init__(self, max_requests: int = 100, window_size: int = 60, timezone: str = "UTC"):
-        self.max_requests = max_requests
-        self.window_size = window_size
-        self.timezone = pytz.timezone(timezone)
-        self.requests = []
-        
-    def _get_current_time(self) -> float:
-        return datetime.now(self.timezone).timestamp()
-        
-    def check_rate_limits(self):
-        current_time = self._get_current_time()
-        self.requests = [t for t in self.requests 
-                        if current_time - t < self.window_size]
-        
-        if len(self.requests) >= self.max_requests:
-            return {
-                "rate_limited": True,
-                "wait_time": self.window_size - (current_time - self.requests[0]),
-                "timezone": str(self.timezone)
-            }
-        return None
-```
-
-## Logging and Monitoring
-
-### Basic Logging
-```python
-from arbvantage_provider.logger import Logger
-
-class LoggingProvider(Provider):
-    def __init__(self):
-        # Initialize with custom logger
-        logger = Logger(
-            name="my-provider",
-            level="INFO",
-            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
-        
-        super().__init__(
-            name="logging-provider",
-            auth_token="your-auth-token",
-            hub_url="hub-grpc:50051",
-            logger=logger
-        )
-```
-
-### Advanced Monitoring
-```python
-class MonitoredProvider(Provider):
-    def __init__(self):
-        super().__init__(
-            name="monitored-provider",
-            auth_token="your-auth-token",
-            hub_url="hub-grpc:50051"
-        )
-        
-        # Custom monitoring setup
-        self.metrics = {
-            'requests': 0,
-            'errors': 0,
-            'avg_response_time': 0
-        }
-        
-    def _process_task(self, task):
-        start_time = time.time()
-        try:
-            result = super()._process_task(task)
-            self._update_metrics(success=True, duration=time.time() - start_time)
-            return result
-        except Exception as e:
-            self._update_metrics(success=False)
-            raise
-            
-    def _update_metrics(self, success: bool, duration: float = 0):
-        self.metrics['requests'] += 1
-        if not success:
-            self.metrics['errors'] += 1
-        if duration > 0:
-            self.metrics['avg_response_time'] = (
-                (self.metrics['avg_response_time'] * (self.metrics['requests'] - 1) + duration)
-                / self.metrics['requests']
-            )
-```
-
-## Security Considerations
-
-### Authentication
-```python
-class SecureProvider(Provider):
-    def __init__(self):
-        super().__init__(
-            name="secure-provider",
-            auth_token=os.getenv("PROVIDER_AUTH_TOKEN"),
-            hub_url="hub-grpc:50051"
-        )
-        
-        # Additional security measures
-        self._validate_auth_token()
-        
-    def _validate_auth_token(self):
-        if not self.auth_token or len(self.auth_token) < 32:
-            raise ValueError("Invalid authentication token")
-```
-
-### Input Validation
-```python
-@self.actions.register(
-    name="secure_action",
-    description="Action with input validation",
-    payload_schema={
-        "user_id": str,
-        "action": str
-    }
-)
-def secure_action(payload: Dict[str, Any]) -> Dict[str, Any]:
-    # Validate input
-    if not self._is_valid_user(payload["user_id"]):
-        raise ValueError("Invalid user ID")
-        
-    if not self._is_allowed_action(payload["action"]):
-        raise ValueError("Action not allowed")
-        
-    return {"status": "success"}
-```
-
-## Performance Optimization
-
-### Caching
-```python
-from functools import lru_cache
-
-class CachedProvider(Provider):
-    @lru_cache(maxsize=100)
-    def _get_cached_data(self, key: str) -> Optional[Dict[str, Any]]:
-        # Implementation
-        return None
-        
-    @self.actions.register(
-        name="cached_action",
-        description="Action with caching",
-        payload_schema={"key": str}
-    )
-    def cached_action(payload: Dict[str, Any]) -> Dict[str, Any]:
-        cached_result = self._get_cached_data(payload["key"])
-        if cached_result:
-            return {"status": "success", "cached": True, "data": cached_result}
-        # Implementation for non-cached case
-```
-
-### Async Operations
-```python
-class AsyncProvider(Provider):
-    @self.actions.register(
-        name="async_action",
-        description="Async action example",
-        payload_schema={"param": str}
-    )
-    async def async_action(payload: Dict[str, Any]) -> Dict[str, Any]:
-        # Async implementation
-        result = await self._process_async(payload["param"])
-        return {"status": "success", "data": result}
-```
-
-## Testing and Debugging
-
-### Unit Testing
-```python
-import unittest
-from unittest.mock import Mock, patch
-
-class TestProvider(unittest.TestCase):
-    def setUp(self):
-        self.provider = MyProvider()
-        
-    def test_action(self):
-        result = self.provider.my_action("test", 123)
-        self.assertEqual(result["status"], "success")
-        
-    @patch('arbvantage_provider.Provider._process_task')
-    def test_rate_limiting(self, mock_process):
-        # Test rate limiting
-        pass
-```
-
-### Debugging
-```python
-class DebugProvider(Provider):
-    def __init__(self):
-        super().__init__(
-            name="debug-provider",
-            auth_token="your-auth-token",
-            hub_url="hub-grpc:50051"
-        )
-        
-        # Enable debug logging
-        self.logger.setLevel("DEBUG")
-        
-    def _process_task(self, task):
-        self.logger.debug(f"Processing task: {task}")
-        try:
-            result = super()._process_task(task)
-            self.logger.debug(f"Task result: {result}")
-            return result
-        except Exception as e:
-            self.logger.error(f"Task failed: {str(e)}")
-            raise
-```
-
-## Contributing
-
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Support
-
-For support, please:
-- Check the [documentation](https://github.com/arbvantage/arbvantage-provider/wiki)
-- Open an [issue](https://github.com/arbvantage/arbvantage-provider/issues)
-- Contact the maintainer at satsura@gmail.com
-
-## Rate Limiting
-
-The framework provides flexible rate limiting capabilities through the `RateLimitMonitor` interface. You can implement custom rate limiting logic or use built-in implementations.
-
-### Built-in Rate Limit Monitors
-
-#### 1. Time-Based Rate Limiting
-
-```python
-from arbvantage_provider import Provider
 from arbvantage_provider.rate_limit import TimeBasedRateLimitMonitor
 
-class MyProvider(Provider):
-    def __init__(self):
-        # Initialize with minimum delay of 2 seconds between requests
-        rate_limit_monitor = TimeBasedRateLimitMonitor(min_delay=2.0)
-        
-        super().__init__(
-            name="my-provider",
-            auth_token="your-auth-token",
-            hub_url="hub-grpc:50051",
-            rate_limit_monitor=rate_limit_monitor
-        )
+monitor = TimeBasedRateLimitMonitor(
+    min_delay=1.0,  # Minimum delay between requests in seconds
+    max_calls_per_second=1  # Maximum number of calls per second
+)
 ```
 
-#### 2. Advanced Rate Limiting with Token Bucket
+### 2. Advanced Rate Limiting
+Includes warning and critical thresholds with logging.
 
 ```python
-from arbvantage_provider import Provider
 from arbvantage_provider.rate_limit import AdvancedRateLimitMonitor
 
-class MyProvider(Provider):
-    def __init__(self):
-        # Initialize with token bucket algorithm
-        # 10 requests per minute, burst up to 20 requests
-        rate_limit_monitor = AdvancedRateLimitMonitor(
-            requests_per_minute=10,
-            burst_size=20
-        )
-        
-        super().__init__(
-            name="my-provider",
-            auth_token="your-auth-token",
-            hub_url="hub-grpc:50051",
-            rate_limit_monitor=rate_limit_monitor
-        )
+monitor = AdvancedRateLimitMonitor(
+    min_delay=0.5,
+    max_calls_per_second=2,
+    warning_threshold=0.8,  # 80% of limit
+    critical_threshold=0.9  # 90% of limit
+)
 ```
 
-### Custom Rate Limit Implementation
-
-You can create your own rate limiting implementation by extending the `RateLimitMonitor` class:
+### 3. Custom Rate Limiting
+Sliding window approach for more granular control.
 
 ```python
-from arbvantage_provider.rate_limit import RateLimitMonitor
-import time
-import redis
-from typing import Dict, Any, Optional
+from arbvantage_provider.rate_limit import CustomRateLimitMonitor
 
-class RedisRateLimitMonitor(RateLimitMonitor):
-    """
-    Rate limit monitor using Redis for distributed rate limiting
-    """
-    
-    def __init__(self, redis_url: str, key_prefix: str = "rate_limit"):
-        self.redis = redis.Redis.from_url(redis_url)
-        self.key_prefix = key_prefix
-        self.window_size = 60  # 1 minute window
-        
-    def check_rate_limits(self) -> Optional[Dict[str, Any]]:
-        current_time = int(time.time())
-        window_key = f"{self.key_prefix}:{current_time // self.window_size}"
-        
-        # Get current request count
-        count = self.redis.get(window_key)
-        if count is None:
-            count = 0
-        else:
-            count = int(count)
-            
-        # Check if we've exceeded the limit (e.g., 100 requests per minute)
-        if count >= 100:
-            return {
-                "rate_limited": True,
-                "wait_time": self.window_size - (current_time % self.window_size),
-                "current_count": count,
-                "limit": 100
-            }
-            
-        return None
-        
-    def handle_throttling(self, wait_time: int = 60) -> None:
-        time.sleep(wait_time)
-        
-    def make_safe_request(self, request_func: callable, *args, **kwargs) -> Any:
-        limits = self.check_rate_limits()
-        if limits and limits.get("rate_limited"):
-            self.handle_throttling(limits["wait_time"])
-            
-        # Increment request count
-        current_time = int(time.time())
-        window_key = f"{self.key_prefix}:{current_time // self.window_size}"
-        self.redis.incr(window_key)
-        self.redis.expire(window_key, self.window_size)
-        
-        return request_func(*args, **kwargs)
-
-# Usage example
-class MyProvider(Provider):
-    def __init__(self):
-        rate_limit_monitor = RedisRateLimitMonitor(
-            redis_url="redis://localhost:6379/0",
-            key_prefix="my_provider:rate_limit"
-        )
-        
-        super().__init__(
-            name="my-provider",
-            auth_token="your-auth-token",
-            hub_url="hub-grpc:50051",
-            rate_limit_monitor=rate_limit_monitor
-        )
+monitor = CustomRateLimitMonitor(
+    window_size=60,  # Window size in seconds
+    max_requests=100  # Maximum requests per window
+)
 ```
 
-### Rate Limit Monitoring in Actions
+## Using Rate Limit Provider
 
-You can also implement rate limiting within specific actions:
+### Basic Usage
 
 ```python
-from arbvantage_provider import Provider
-from arbvantage_provider.rate_limit import TimeBasedRateLimitMonitor
-import time
+from arbvantage_provider.rate_limit_provider import RateLimitProvider
 
-class APIProvider(Provider):
-    def __init__(self):
-        # Global rate limit for all requests
-        global_rate_limit = TimeBasedRateLimitMonitor(min_delay=1.0)
-        
-        super().__init__(
-            name="api-provider",
-            auth_token="your-auth-token",
-            hub_url="hub-grpc:50051",
-            rate_limit_monitor=global_rate_limit
-        )
-        
-        # Action-specific rate limit
-        self.api_rate_limit = TimeBasedRateLimitMonitor(min_delay=0.5)
-        
-        @self.actions.register(
-            name="call_external_api",
-            description="Call external API with rate limiting",
-            payload_schema={
-                "endpoint": str,
-                "params": dict
-            }
-        )
-        def call_external_api(payload: dict) -> dict:
-            # Check action-specific rate limit
-            limits = self.api_rate_limit.check_rate_limits()
-            if limits and limits.get("rate_limited"):
-                self.api_rate_limit.handle_throttling(limits["wait_time"])
-                
-            # Make API call
-            try:
-                # Your API call implementation here
-                result = make_api_call(payload["endpoint"], payload["params"])
-                
-                # Update rate limit after successful call
-                self.api_rate_limit.make_safe_request(lambda: None)
-                
-                return ProviderResponse(
-                    status="success",
-                    data=result
-                )
-            except Exception as e:
-                return ProviderResponse(
-                    status="error",
-                    message=str(e)
-                )
+# Create provider with default time-based rate limiting
+provider = RateLimitProvider(
+    min_delay=1.0,
+    max_calls_per_second=1
+)
+
+# Make a request
+result = provider.make_safe_request(my_api_call, arg1, arg2)
 ```
 
-### Rate Limit Monitoring with Multiple Providers
-
-For scenarios with multiple providers sharing the same rate limits:
+### API-Specific Rate Limiting
 
 ```python
-from arbvantage_provider import Provider
-from arbvantage_provider.rate_limit import RateLimitMonitor
-import threading
-import time
-
-class SharedRateLimitMonitor(RateLimitMonitor):
-    """
-    Rate limit monitor shared between multiple providers
-    """
-    
-    def __init__(self, max_requests: int = 100, window_size: int = 60):
-        self.max_requests = max_requests
-        self.window_size = window_size
-        self.requests = []
-        self.lock = threading.Lock()
-        
-    def check_rate_limits(self) -> Optional[Dict[str, Any]]:
-        current_time = time.time()
-        
-        with self.lock:
-            # Remove old requests
-            self.requests = [t for t in self.requests 
-                           if current_time - t < self.window_size]
-            
-            if len(self.requests) >= self.max_requests:
-                # Calculate wait time until oldest request expires
-                wait_time = self.window_size - (current_time - self.requests[0])
-                return {
-                    "rate_limited": True,
-                    "wait_time": wait_time,
-                    "current_count": len(self.requests),
-                    "limit": self.max_requests
-                }
-                
-        return None
-        
-    def handle_throttling(self, wait_time: int = 60) -> None:
-        time.sleep(wait_time)
-        
-    def make_safe_request(self, request_func: callable, *args, **kwargs) -> Any:
-        limits = self.check_rate_limits()
-        if limits and limits.get("rate_limited"):
-            self.handle_throttling(limits["wait_time"])
-            
-        with self.lock:
-            self.requests.append(time.time())
-            
-        return request_func(*args, **kwargs)
-
-# Usage with multiple providers
-shared_rate_limit = SharedRateLimitMonitor(max_requests=100, window_size=60)
-
-class ProviderA(Provider):
+class FacebookProvider(RateLimitProvider):
     def __init__(self):
         super().__init__(
-            name="provider-a",
-            auth_token="token-a",
-            hub_url="hub-grpc:50051",
-            rate_limit_monitor=shared_rate_limit
-        )
-
-class ProviderB(Provider):
-    def __init__(self):
-        super().__init__(
-            name="provider-b",
-            auth_token="token-b",
-            hub_url="hub-grpc:50051",
-            rate_limit_monitor=shared_rate_limit
+            monitor_class=AdvancedRateLimitMonitor,
+            min_delay=0.5,
+            max_calls_per_second=2,
+            warning_threshold=0.8,
+            critical_threshold=0.9
         )
 ```
 
-### Практические примеры использования Rate Limiting
-
-#### 1. Глобальный rate limit как свойство класса
+### Custom Rate Limiting
 
 ```python
-from arbvantage_provider import Provider
-from arbvantage_provider.rate_limit import TimeBasedRateLimitMonitor
-
-class GlobalRateLimitProvider(Provider):
-    # Определяем глобальный rate limit как свойство класса
-    rate_limit_monitor = TimeBasedRateLimitMonitor(min_delay=1.0)
-    
+class CustomProvider(RateLimitProvider):
     def __init__(self):
         super().__init__(
-            name="global-rate-provider",
-            auth_token="your-auth-token",
-            hub_url="hub-grpc:50051"
+            monitor_class=CustomRateLimitMonitor,
+            window_size=60,
+            max_requests=100
         )
-        
-        # Все действия будут использовать глобальный rate limit
-        @self.actions.register(
-            name="action1",
-            description="Действие с глобальным rate limit",
-            payload_schema={"param": str}
-        )
-        def action1(payload: dict) -> dict:
-            return {"result": "action1"}
-            
-        @self.actions.register(
-            name="action2",
-            description="Другое действие с тем же rate limit",
-            payload_schema={"param": str}
-        )
-        def action2(payload: dict) -> dict:
-            return {"result": "action2"}
 ```
 
-#### 2. Rate limit для конкретного действия
+## Response Format
+
+When rate limits are exceeded, the system returns a dictionary with the following information:
 
 ```python
-from arbvantage_provider import Provider
-from arbvantage_provider.rate_limit import TimeBasedRateLimitMonitor
-
-class PerActionRateLimitProvider(Provider):
-    def __init__(self):
-        super().__init__(
-            name="per-action-rate-provider",
-            auth_token="your-auth-token",
-            hub_url="hub-grpc:50051"
-        )
-        
-        # Действие без rate limit
-        @self.actions.register(
-            name="unlimited_action",
-            description="Действие без ограничений",
-            payload_schema={"param": str}
-        )
-        def unlimited_action(payload: dict) -> dict:
-            return {"result": "unlimited"}
-            
-        # Действие с быстрым rate limit
-        @self.actions.register(
-            name="fast_action",
-            description="Действие с частыми запросами",
-            payload_schema={"param": str},
-            rate_limit_monitor=TimeBasedRateLimitMonitor(min_delay=0.1)  # Rate limit прямо в регистрации
-        )
-        def fast_action(payload: dict) -> dict:
-            return {"result": "fast"}
-            
-        # Действие с медленным rate limit
-        @self.actions.register(
-            name="slow_action",
-            description="Действие с редкими запросами",
-            payload_schema={"param": str},
-            rate_limit_monitor=TimeBasedRateLimitMonitor(min_delay=5.0)  # Rate limit прямо в регистрации
-        )
-        def slow_action(payload: dict) -> dict:
-            return {"result": "slow"}
+{
+    "error": "Rate limit exceeded",
+    "retry_after": 5.0,  # Seconds to wait before retrying
+    "current_usage": 0.9,  # Current usage ratio (0.0 to 1.0)
+    "limit_type": "time_based"  # Type of rate limit
+}
 ```
 
-#### 3. Комбинированный подход
+## Best Practices
 
-```python
-from arbvantage_provider import Provider
-from arbvantage_provider.rate_limit import TimeBasedRateLimitMonitor
+1. **Choose Appropriate Strategy**
+   - Use time-based for simple APIs
+   - Use advanced for APIs with strict limits
+   - Use custom for complex rate limiting needs
 
-class CombinedRateLimitProvider(Provider):
-    # Глобальный rate limit по умолчанию
-    rate_limit_monitor = TimeBasedRateLimitMonitor(min_delay=1.0)
-    
-    def __init__(self):
-        super().__init__(
-            name="combined-rate-provider",
-            auth_token="your-auth-token",
-            hub_url="hub-grpc:50051"
-        )
-        
-        # Действие с глобальным rate limit
-        @self.actions.register(
-            name="default_action",
-            description="Действие с глобальным rate limit",
-            payload_schema={"param": str}
-        )
-        def default_action(payload: dict) -> dict:
-            return {"result": "default"}
-            
-        # Действие с собственным rate limit
-        @self.actions.register(
-            name="custom_action",
-            description="Действие с собственным rate limit",
-            payload_schema={"param": str},
-            rate_limit_monitor=TimeBasedRateLimitMonitor(min_delay=0.5)  # Переопределяем глобальный limit
-        )
-        def custom_action(payload: dict) -> dict:
-            return {"result": "custom"}
-```
+2. **Monitor Usage**
+   - Check rate limits before making requests
+   - Handle rate limit responses gracefully
+   - Log warnings and critical states
+
+3. **Configuration**
+   - Set realistic limits based on API requirements
+   - Adjust thresholds based on usage patterns
+   - Update configuration as needed
+
+4. **Error Handling**
+   - Implement retry logic for rate limit errors
+   - Use exponential backoff for retries
+   - Log rate limit violations
+
+## Implementation Details
+
+The rate limiting system is implemented using:
+
+- Thread-safe operations with `threading.Lock`
+- Flexible monitoring strategies
+- Configurable thresholds and limits
+- Detailed logging and error reporting
 
 ## Response Formats
 

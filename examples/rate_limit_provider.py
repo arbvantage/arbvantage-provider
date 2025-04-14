@@ -1,184 +1,215 @@
 """
-Rate Limit Provider Example
-
-This example demonstrates various rate limiting strategies using the Arbvantage Provider Framework.
-It shows how to:
-1. Use different types of rate limit monitors
-2. Configure rate limits at different levels
-3. Handle rate limit responses
-4. Implement custom rate limiting logic
+Example of a provider with different rate limiting strategies.
+This example demonstrates various approaches to rate limiting in providers.
 """
 
+from typing import Dict, Any, Optional
 from arbvantage_provider import Provider
-from arbvantage_provider.schemas import ProviderResponse
 from arbvantage_provider.rate_limit import (
+    RateLimitMonitor,
     TimeBasedRateLimitMonitor,
-    AdvancedRateLimitMonitor,
-    NoRateLimitMonitor
+    AdvancedRateLimitMonitor
 )
-import os
 import time
-from typing import Dict, Any
+import threading
+
+class CustomRateLimitMonitor(RateLimitMonitor):
+    """
+    Custom rate limit monitor implementation.
+    This monitor uses a sliding window approach with thread-safe counters.
+    """
+    
+    def __init__(self, max_requests: int = 100, window_size: int = 60):
+        """
+        Initialize the rate limit monitor.
+        
+        Args:
+            max_requests: Maximum number of requests allowed in the window
+            window_size: Time window size in seconds
+        """
+        self.max_requests = max_requests
+        self.window_size = window_size
+        self.requests = []
+        self.lock = threading.Lock()
+        
+    def check_rate_limits(self) -> Optional[Dict[str, Any]]:
+        """
+        Check if rate limit is exceeded.
+        Returns rate limit information if exceeded, None otherwise.
+        """
+        current_time = time.time()
+        
+        with self.lock:
+            # Remove old requests outside the window
+            self.requests = [t for t in self.requests 
+                           if current_time - t < self.window_size]
+            
+            if len(self.requests) >= self.max_requests:
+                # Calculate wait time until oldest request expires
+                wait_time = self.window_size - (current_time - self.requests[0])
+                return {
+                    "rate_limited": True,
+                    "wait_time": wait_time,
+                    "current_count": len(self.requests),
+                    "limit": self.max_requests
+                }
+                
+        return None
+        
+    def handle_throttling(self, wait_time: int = 60) -> None:
+        """
+        Handle rate limit throttling by waiting.
+        
+        Args:
+            wait_time: Time to wait in seconds
+        """
+        time.sleep(wait_time)
+        
+    def make_safe_request(self, request_func: callable, *args, **kwargs) -> Any:
+        """
+        Execute request with rate limit consideration.
+        
+        Args:
+            request_func: Function to execute
+            *args: Positional arguments for the function
+            **kwargs: Keyword arguments for the function
+            
+        Returns:
+            Result of the request function
+        """
+        limits = self.check_rate_limits()
+        if limits and limits.get("rate_limited"):
+            self.handle_throttling(limits["wait_time"])
+            
+        with self.lock:
+            self.requests.append(time.time())
+            
+        return request_func(*args, **kwargs)
 
 class RateLimitProvider(Provider):
     """
-    Provider example demonstrating various rate limiting strategies.
-    
-    This provider shows different ways to implement rate limiting:
-    - Global rate limits
-    - Action-specific rate limits
-    - Custom rate limit monitors
-    - No rate limits
+    Example provider demonstrating different rate limiting approaches.
+    This provider shows how to implement rate limiting at different levels.
     """
     
     def __init__(self):
         """
-        Initialize the rate limit provider with different rate limit configurations.
+        Initialize the provider with different rate limit monitors.
         """
-        super().__init__(
-            name=os.getenv("PROVIDER_NAME", "rate-limit-provider"),
-            auth_token=os.getenv("PROVIDER_AUTH_TOKEN"),
-            hub_url=os.getenv("HUB_GRPC_URL", "hub-grpc:50051")
+        # Global rate limit for all requests
+        global_rate_limit = TimeBasedRateLimitMonitor(
+            min_delay=1.0,              # Minimum delay between requests
+            max_calls_per_second=2,     # Maximum calls per second
+            timezone="UTC"              # Timezone for rate limiting
         )
         
-        # Example 1: Action with no rate limits
-        @self.actions.register(
-            name="unlimited_action",
-            description="Action without any rate limits",
-            payload_schema={"message": str},
-            rate_limit_monitor=NoRateLimitMonitor()  # Explicitly set no rate limits
+        super().__init__(
+            name="rate-limit-provider",
+            auth_token="your-auth-token",
+            hub_url="hub-grpc:50051",
+            rate_limit_monitor=global_rate_limit
         )
-        def unlimited_action(payload: Dict[str, Any]) -> Dict[str, Any]:
+        
+        # Action-specific rate limit
+        self.api_rate_limit = AdvancedRateLimitMonitor(
+            min_delay=0.5,              # Faster rate limit for API calls
+            max_calls_per_second=5,     # Higher limit for API calls
+            warning_threshold=0.8,      # 80% of limit triggers warning
+            critical_threshold=0.9      # 90% of limit triggers critical alert
+        )
+        
+        # Custom rate limit for specific actions
+        self.custom_rate_limit = CustomRateLimitMonitor(
+            max_requests=50,            # 50 requests per minute
+            window_size=60              # 1 minute window
+        )
+        
+        # Register actions with different rate limits
+        self._register_actions()
+        
+    def _register_actions(self):
+        """
+        Register provider actions with different rate limiting strategies.
+        """
+        @self.actions.register(
+            name="global_limited_action",
+            description="Action using global rate limit",
+            payload_schema={"param": str}
+        )
+        def global_limited_action(payload: dict) -> dict:
             """
-            Action that can be called without any rate limits.
-            """
-            return ProviderResponse(
-                status="success",
-                data={"message": payload["message"]}
-            )
+            Action using the provider's global rate limit.
             
-        # Example 2: Action with simple time-based rate limit
-        @self.actions.register(
-            name="slow_action",
-            description="Action with 2-second delay between calls",
-            payload_schema={"message": str},
-            rate_limit_monitor=TimeBasedRateLimitMonitor(min_delay=2.0)
-        )
-        def slow_action(payload: Dict[str, Any]) -> Dict[str, Any]:
-            """
-            Action that can only be called once every 2 seconds.
-            """
-            return ProviderResponse(
-                status="success",
-                data={"message": payload["message"]}
-            )
-            
-        # Example 3: Action with advanced rate limiting
-        @self.actions.register(
-            name="advanced_action",
-            description="Action with advanced rate limiting (10 requests per minute)",
-            payload_schema={"message": str},
-            rate_limit_monitor=AdvancedRateLimitMonitor(
-                requests_per_minute=10,
-                burst_size=5
-            )
-        )
-        def advanced_action(payload: Dict[str, Any]) -> Dict[str, Any]:
-            """
-            Action with sophisticated rate limiting using token bucket algorithm.
-            Allows 10 requests per minute with bursts of up to 5 requests.
-            """
-            return ProviderResponse(
-                status="success",
-                data={"message": payload["message"]}
-            )
-            
-        # Example 4: Action with custom rate limit handling
-        @self.actions.register(
-            name="custom_action",
-            description="Action with custom rate limit handling",
-            payload_schema={"message": str}
-        )
-        def custom_action(payload: Dict[str, Any]) -> Dict[str, Any]:
-            """
-            Action that implements custom rate limit handling.
-            This example shows how to manually check and handle rate limits.
-            """
-            # Check rate limits before processing
-            limits = self.rate_limit_monitor.check_rate_limits()
-            if limits and limits.get("rate_limited"):
-                return ProviderResponse(
-                    status="limit",
-                    message=f"Rate limit exceeded. Please wait {limits['wait_time']} seconds",
-                    data={"wait_time": limits["wait_time"]}
-                )
+            Args:
+                payload: Action payload
                 
-            # Process the request
-            result = {"message": payload["message"]}
+            Returns:
+                Action result
+            """
+            return {"result": "global_limited"}
             
-            # Update rate limit after successful processing
-            self.rate_limit_monitor.make_safe_request(lambda: None)
-            
-            return ProviderResponse(
-                status="success",
-                data=result
-            )
-            
-        # Example 5: Action with conditional rate limiting
         @self.actions.register(
-            name="conditional_action",
-            description="Action with conditional rate limiting based on payload",
-            payload_schema={
-                "message": str,
-                "priority": str  # "high" or "low"
-            }
+            name="api_action",
+            description="Action with API-specific rate limit",
+            payload_schema={"endpoint": str, "params": dict},
+            rate_limit_monitor=self.api_rate_limit
         )
-        def conditional_action(payload: Dict[str, Any]) -> Dict[str, Any]:
+        def api_action(payload: dict) -> dict:
             """
-            Action that applies different rate limits based on the priority.
-            High priority requests bypass rate limits.
+            Action with API-specific rate limit.
+            
+            Args:
+                payload: Action payload containing endpoint and parameters
+                
+            Returns:
+                API call result
             """
-            if payload["priority"] == "high":
-                # High priority requests bypass rate limits
-                return ProviderResponse(
-                    status="success",
-                    data={"message": payload["message"], "priority": "high"}
-                )
-            else:
-                # Low priority requests use default rate limits
-                limits = self.rate_limit_monitor.check_rate_limits()
-                if limits and limits.get("rate_limited"):
-                    return ProviderResponse(
-                        status="limit",
-                        message=f"Rate limit exceeded. Please wait {limits['wait_time']} seconds",
-                        data={"wait_time": limits["wait_time"]}
-                    )
-                    
-                self.rate_limit_monitor.make_safe_request(lambda: None)
-                return ProviderResponse(
-                    status="success",
-                    data={"message": payload["message"], "priority": "low"}
-                )
+            # Check API rate limit
+            limits = self.api_rate_limit.check_rate_limits()
+            if limits and limits.get("rate_limited"):
+                self.api_rate_limit.handle_throttling(limits["wait_time"])
+                
+            # Make API call
+            try:
+                result = self._make_api_call(payload["endpoint"], payload["params"])
+                return {"status": "success", "data": result}
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
+                
+        @self.actions.register(
+            name="custom_limited_action",
+            description="Action with custom rate limit",
+            payload_schema={"param": str},
+            rate_limit_monitor=self.custom_rate_limit
+        )
+        def custom_limited_action(payload: dict) -> dict:
+            """
+            Action using custom rate limit monitor.
+            
+            Args:
+                payload: Action payload
+                
+            Returns:
+                Action result
+            """
+            return {"result": "custom_limited"}
+            
+    def _make_api_call(self, endpoint: str, params: dict) -> dict:
+        """
+        Make an API call with rate limit consideration.
+        
+        Args:
+            endpoint: API endpoint
+            params: Request parameters
+            
+        Returns:
+            API response
+        """
+        # Simulate API call
+        time.sleep(0.1)
+        return {"endpoint": endpoint, "params": params}
 
 if __name__ == "__main__":
-    """
-    Run the rate limit provider if this script is executed directly.
-    
-    Example usage:
-    1. Set environment variables:
-       export PROVIDER_NAME="rate-limit-provider"
-       export PROVIDER_AUTH_TOKEN="your-auth-token"
-       export HUB_GRPC_URL="hub-grpc:50051"
-       
-    2. Run the provider:
-       python rate_limit_provider.py
-       
-    The provider demonstrates different rate limiting strategies:
-    - unlimited_action: No rate limits
-    - slow_action: 2-second delay between calls
-    - advanced_action: 10 requests per minute with burst of 5
-    - custom_action: Manual rate limit handling
-    - conditional_action: Priority-based rate limiting
-    """
+    # Create and start the provider
     provider = RateLimitProvider()
     provider.start() 

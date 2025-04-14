@@ -53,19 +53,6 @@ class Provider:
         rate_limit_monitor (RateLimitMonitor): Rate limit monitoring implementation
     """
     
-    # Default rate limit monitor for all instances
-    _default_rate_limit_monitor: Optional[RateLimitMonitor] = None
-    
-    @classmethod
-    def set_default_rate_limit(cls) -> None:
-        """
-        Set default rate limit for all provider instances.
-        
-        Args:
-            min_delay: Minimum delay between calls in seconds
-        """
-        cls._default_rate_limit_monitor = NoRateLimitMonitor()
-    
     def __init__(
         self,
         name: str,
@@ -104,7 +91,7 @@ class Provider:
         self.actions = ActionsRegistry()
         
         # Initialize rate limit monitor
-        self.rate_limit_monitor = rate_limit_monitor or self.__class__._default_rate_limit_monitor or NoRateLimitMonitor()
+        self.rate_limit_monitor = rate_limit_monitor or NoRateLimitMonitor()
 
     def _create_channel(self):
         """
@@ -159,6 +146,20 @@ class Provider:
             Dict[str, Any]: Processed task result with status and data
         """
         try:
+            # Check provider rate limits
+            limits = self.rate_limit_monitor.check_rate_limits()
+            if limits and limits.get("rate_limited"):
+                self.logger.warning(
+                    "Rate limit exceeded",
+                    action=action,
+                    wait_time=limits.get("wait_time")
+                )
+                return self._handle_response(ProviderResponse(
+                    status="limit",
+                    message=f"Rate limit exceeded: {limits.get('message')}",
+                    data={"wait_time": limits.get("wait_time")}
+                ))
+
             action_def = self.actions.get_action(action)
             if not action_def:
                 self.logger.error(
@@ -167,6 +168,21 @@ class Provider:
                     available_actions=list(self.actions.get_actions().keys())
                 )
                 return self._handle_response(ProviderResponse(status="error", message=f"Action '{action}' not found"))
+
+            # Check action-specific rate limits if action supports it
+            if hasattr(action_def, 'check_rate_limits'):
+                limits = action_def.check_rate_limits(account, payload)
+                if limits and limits.get("rate_limited"):
+                    self.logger.warning(
+                        "Action-specific rate limit exceeded",
+                        action=action,
+                        wait_time=limits.get("wait_time")
+                    )
+                    return self._handle_response(ProviderResponse(
+                        status="limit",
+                        message=f"Action-specific rate limit exceeded: {limits.get('message')}",
+                        data={"wait_time": limits.get("wait_time")}
+                    ))
 
             # Validate required parameters for payload if schema exists
             if hasattr(action_def, 'payload_schema') and action_def.payload_schema:
@@ -304,75 +320,21 @@ class Provider:
         
         This method:
         1. Polls for new tasks from the Hub
-        2. Handles rate limiting
-        3. Processes tasks and submits results
-        4. Handles various error conditions
+        2. Processes tasks and submits results
+        3. Handles various error conditions
         
         Args:
             stub: gRPC stub for Hub communication
         """
         while self.running:
             try:
-                # Check rate limits before making request
-                limits = self.rate_limit_monitor.check_rate_limits()
-                if limits and limits.get("rate_limited"):
-                    wait_time = limits.get("wait_time", self.execution_timeout)
-                    self.logger.warning(
-                        "Rate limit exceeded",
-                        wait_time=wait_time
-                    )
-                    self.rate_limit_monitor.handle_throttling(wait_time)
-                    
-                    # Return rate limit response
-                    result = ProviderResponse(
-                        status="limit",
-                        message=f"Rate limit exceeded. Please wait {wait_time} seconds",
-                        data={"wait_time": wait_time}
-                    ).model_dump()
-                    
-                    # Submit rate limit response to Hub
-                    stub.SubmitTaskResult(hub_pb2.TaskResult(
-                        provider=self.name,
-                        auth_token=self.auth_token,
-                        status="limit",
-                        result=json.dumps(result)
-                    ))
-                    continue
-                
                 task = stub.GetTask(hub_pb2.ProviderRequest(
                     provider=self.name,
                     auth_token=self.auth_token
                 ))
 
                 if not task.task_id:
-                    if task.action == b"rate_limited":
-                        try:
-                            rate_limit_data = json.loads(task.payload.decode('utf-8'))
-                            wait_time = rate_limit_data.get("wait_time", self.execution_timeout)
-                            self.logger.warning(
-                                "Rate limit exceeded",
-                                wait_time=wait_time
-                            )
-                            self.rate_limit_monitor.handle_throttling(wait_time)
-                            
-                            # Return rate limit response
-                            result = ProviderResponse(
-                                status="limit",
-                                message=f"Rate limit exceeded. Please wait {wait_time} seconds",
-                                data={"wait_time": wait_time}
-                            ).model_dump()
-                            
-                            # Submit rate limit response to Hub
-                            stub.SubmitTaskResult(hub_pb2.TaskResult(
-                                provider=self.name,
-                                auth_token=self.auth_token,
-                                status="limit",
-                                result=json.dumps(result)
-                            ))
-                        except json.JSONDecodeError:
-                            self.rate_limit_monitor.handle_throttling(self.execution_timeout)
-                    else:
-                        self.rate_limit_monitor.handle_throttling(self.execution_timeout)
+                    time.sleep(self.execution_timeout)
                     continue
 
                 self.logger.info(
