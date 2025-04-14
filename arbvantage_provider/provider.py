@@ -406,6 +406,18 @@ class Provider:
                         "Failed to parse task data",
                         error=str(e)
                     )
+                    result = ProviderResponse(
+                        status="error",
+                        message="Failed to parse task data",
+                        data={"error": str(e)}
+                    ).model_dump()
+                    stub.SubmitTaskResult(hub_pb2.TaskResult(
+                        task_id=task.task_id,
+                        provider=self.name,
+                        auth_token=self.auth_token,
+                        status="error",
+                        result=json.dumps(result)
+                    ))
                     continue
 
             except grpc.RpcError as e:
@@ -421,4 +433,42 @@ class Provider:
                     self.logger.info("Task not found, waiting for next one...")
                     time.sleep(self.execution_timeout)
                     continue
-                raise 
+                result = ProviderResponse(
+                    status="error",
+                    message="gRPC error occurred",
+                    data={
+                        "error": e.details(),
+                        "code": str(e.code())
+                    }
+                ).model_dump()
+                if task.task_id:
+                    stub.SubmitTaskResult(hub_pb2.TaskResult(
+                        task_id=task.task_id,
+                        provider=self.name,
+                        auth_token=self.auth_token,
+                        status="error",
+                        result=json.dumps(result)
+                    ))
+                time.sleep(self.execution_timeout)
+                continue
+                
+            except Exception as e:
+                self.logger.exception(
+                    "Unexpected error processing task",
+                    error=str(e)
+                )
+                result = ProviderResponse(
+                    status="error",
+                    message="Unexpected error occurred",
+                    data={"error": str(e)}
+                ).model_dump()
+                if task.task_id:
+                    stub.SubmitTaskResult(hub_pb2.TaskResult(
+                        task_id=task.task_id,
+                        provider=self.name,
+                        auth_token=self.auth_token,
+                        status="error",
+                        result=json.dumps(result)
+                    ))
+                time.sleep(self.execution_timeout)
+                continue

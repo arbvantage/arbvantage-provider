@@ -18,7 +18,7 @@ import os
 from typing import Dict, Any, Optional, Union
 from datetime import datetime
 from functools import wraps
-
+from arbvantage_provider.schemas import ProviderResponse
 class ProviderLogger:
     """
     Universal logger for Arbvantage providers.
@@ -314,6 +314,10 @@ class ProviderLogger:
                     return result
                 except Exception as e:
                     self.log_performance(operation, start_time)
-                    raise
+                    return ProviderResponse(
+                        status="error",
+                        message=f"Error in {operation}",
+                        data={"error": str(e)}
+                    ).model_dump()
             return wrapper
         return decorator 

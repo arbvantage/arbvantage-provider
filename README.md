@@ -1105,3 +1105,68 @@ All responses follow this basic structure:
 ```
 
 The `data` field is optional and its structure depends on the specific response type and context. For rate limit responses, the `wait_time` field indicates how many seconds you need to wait before making the next request. This value is always a positive number and represents the minimum time to wait to avoid rate limit restrictions.
+
+## Examples
+
+The framework comes with several example providers demonstrating different use cases:
+
+### Basic Examples
+
+1. **Basic Provider** (`examples/basic_provider.py`)
+   - Simple provider implementation
+   - Basic action registration
+   - Error handling
+
+2. **Rate Limit Provider** (`examples/rate_limit_provider.py`)
+   - Rate limiting implementation
+   - Different rate limit strategies
+   - Monitoring and metrics
+
+3. **Weather Provider** (`examples/weather_provider.py`)
+   - External API integration
+   - Data validation
+   - Error handling
+
+### Advanced Examples
+
+1. **Redis Cached Provider** (`examples/redis_cached_provider.py`)
+   - Redis caching implementation
+   - Cache key generation
+   - Cache invalidation
+   - TTL management
+
+2. **Async Provider** (`examples/async_provider.py`)
+   - Async/await operations
+   - Concurrent task execution
+   - Error handling in async context
+   - Rate limiting with async operations
+
+3. **Database Provider** (`examples/database_provider.py`)
+   - Database connection management
+   - CRUD operations
+   - Transaction handling
+   - Error handling with database
+
+4. **Message Queue Provider** (`examples/message_queue_provider.py`)
+   - Message queue integration
+   - Publishing messages
+   - Consuming messages
+   - Error handling with queues
+
+5. **External API Provider** (`examples/external_api_provider.py`)
+   - External API integration
+   - API authentication
+   - Rate limiting
+   - Retry logic
+   - Response caching
+
+### Facebook Integration Example
+
+The `examples/facebook/` directory contains a complete example of Facebook integration:
+
+- **Facebook Provider** (`examples/facebook/facebook_provider.py`)
+  - Facebook API integration
+  - OAuth authentication
+  - Graph API usage
+  - Rate limiting
+  - Error handling

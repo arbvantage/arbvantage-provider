@@ -80,6 +80,7 @@ setup(
         "pydantic",
         "requests",
         "pytz",
+        "python-dateutil"
     ],
     cmdclass={
         'build_py': CustomBuildPy,

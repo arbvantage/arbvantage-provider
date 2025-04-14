@@ -12,6 +12,7 @@ The module uses type hints and dataclasses for better type safety and code organ
 
 from typing import TypeVar, Callable, Dict, Any, Type, Optional
 from dataclasses import dataclass
+from functools import wraps
 from .rate_limit import RateLimitMonitor, TimeBasedRateLimitMonitor
 from .schemas import ProviderResponse
 
@@ -45,26 +46,34 @@ class Action:
         Returns:
             Any: Result of the action execution
         """
-        if self.rate_limit_monitor:
-            # Check rate limits
-            limits = self.rate_limit_monitor.check_rate_limits()
-            if limits and limits.get("rate_limited"):
-                wait_time = limits.get("wait_time", 1.0)
-                self.rate_limit_monitor.handle_throttling(wait_time)
-                return ProviderResponse(
-                    status="limit",
-                    message=f"Rate limit exceeded. Please wait {wait_time} seconds",
-                    data={"wait_time": wait_time}
-                ).model_dump()
+        try:
+            if self.rate_limit_monitor:
+                # Check rate limits
+                limits = self.rate_limit_monitor.check_rate_limits()
+                if limits and limits.get("rate_limited"):
+                    wait_time = limits.get("wait_time", 1.0)
+                    self.rate_limit_monitor.handle_throttling(wait_time)
+                    return ProviderResponse(
+                        status="limit",
+                        message=f"Rate limit exceeded. Please wait {wait_time} seconds",
+                        data={"wait_time": wait_time}
+                    ).model_dump()
+                    
+                # Execute the action
+                result = self.handler(*args, **kwargs)
                 
-            # Execute the action
-            result = self.handler(*args, **kwargs)
+                # Update rate limit after successful execution
+                self.rate_limit_monitor.make_safe_request(lambda: None)
+                return result
+                
+            return self.handler(*args, **kwargs)
             
-            # Update rate limit after successful execution
-            self.rate_limit_monitor.make_safe_request(lambda: None)
-            return result
-            
-        return self.handler(*args, **kwargs)
+        except Exception as e:
+            return ProviderResponse(
+                status="error",
+                message="Error executing action",
+                data={"error": str(e)}
+            ).model_dump()
 
 class ActionsRegistry:
     """
