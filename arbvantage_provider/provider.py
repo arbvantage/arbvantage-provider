@@ -134,19 +134,25 @@ class Provider:
             return channel
         return create()
 
+    def _handle_response(self, response: ProviderResponse) -> Dict[str, Any]:
+        """
+        Helper method to convert ProviderResponse to dictionary.
+        
+        Args:
+            response (ProviderResponse): Response to convert
+            
+        Returns:
+            Dict[str, Any]: Converted response
+        """
+        return response.model_dump()
+
     def process_task(self, action: str, payload: Dict, account: Optional[str] = None) -> Dict[str, Any]:
         """
-        Process a single task received from the Hub.
-        
-        This method:
-        1. Validates the action exists
-        2. Checks required parameters are present
-        3. Executes the action handler
-        4. Validates and returns the result
+        Process a single task by executing the specified action with given parameters.
         
         Args:
             action (str): Name of the action to execute
-            payload (Dict): Task payload data
+            payload (Dict): Action parameters
             account (Optional[str]): Account identifier if applicable
             
         Returns:
@@ -160,7 +166,7 @@ class Provider:
                     action=action,
                     available_actions=list(self.actions.get_actions().keys())
                 )
-                return ProviderResponse(status="error", message=f"Action '{action}' not found").model_dump()
+                return self._handle_response(ProviderResponse(status="error", message=f"Action '{action}' not found"))
 
             # Validate required parameters for payload if schema exists
             if hasattr(action_def, 'payload_schema') and action_def.payload_schema:
@@ -174,7 +180,7 @@ class Provider:
                         action=action,
                         missing_params=missing_params
                     )
-                    return ProviderResponse(status="error", message=f"Missing required parameters: {', '.join(missing_params)}").model_dump()
+                    return self._handle_response(ProviderResponse(status="error", message=f"Missing required parameters: {', '.join(missing_params)}"))
             
             # Validate required parameters for account if schema exists
             if hasattr(action_def, 'account_schema') and action_def.account_schema:
@@ -188,7 +194,7 @@ class Provider:
                         action=action,
                         missing_params=missing_account_params
                     )
-                    return ProviderResponse(status="error", message=f"Missing required account parameters: {', '.join(missing_account_params)}").model_dump()
+                    return self._handle_response(ProviderResponse(status="error", message=f"Missing required account parameters: {', '.join(missing_account_params)}"))
             
             action_params = {
                 'payload': {},  # By default, we pass empty payload
@@ -227,11 +233,11 @@ class Provider:
                     expected_type="ProviderResponse",
                     actual_type=str(type(result))
                 )
-                return ProviderResponse(
+                return self._handle_response(ProviderResponse(
                     status="error",
                     data=result,
                     message=error_msg
-                ).model_dump()
+                ))
             
             self.logger.info(
                 "Action completed successfully",
@@ -239,7 +245,7 @@ class Provider:
                 status=result.status
             )
             
-            return result.model_dump()
+            return self._handle_response(result)
 
         except Exception as e:
             self.logger.exception(
@@ -247,7 +253,7 @@ class Provider:
                 action=action,
                 error=str(e)
             )
-            return ProviderResponse(status="error", message=str(e)).model_dump()
+            return self._handle_response(ProviderResponse(status="error", message=str(e)))
 
     def start(self):
         """

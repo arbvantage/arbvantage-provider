@@ -294,15 +294,27 @@ class ProviderLogger:
             extra={"context": self._format_context(context)}
         )
         
-    def performance_monitor(self, operation: str):
+    def _handle_response(self, response: ProviderResponse) -> Dict[str, Any]:
         """
-        Decorator for monitoring function performance.
+        Helper method to convert ProviderResponse to dictionary.
         
         Args:
-            operation: Operation name
+            response (ProviderResponse): Response to convert
             
         Returns:
-            Decorated function
+            Dict[str, Any]: Converted response
+        """
+        return response.model_dump()
+
+    def performance_monitor(self, operation: str):
+        """
+        Decorator to monitor performance of a function.
+        
+        Args:
+            operation (str): Name of the operation being monitored
+            
+        Returns:
+            Callable: Decorated function
         """
         def decorator(func):
             @wraps(func)
@@ -314,10 +326,10 @@ class ProviderLogger:
                     return result
                 except Exception as e:
                     self.log_performance(operation, start_time)
-                    return ProviderResponse(
+                    return self._handle_response(ProviderResponse(
                         status="error",
                         message=f"Error in {operation}",
                         data={"error": str(e)}
-                    ).model_dump()
+                    ))
             return wrapper
         return decorator 

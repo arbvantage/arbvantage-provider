@@ -10,6 +10,18 @@ from datetime import datetime
 import time
 from typing import Dict, Any
 
+def _handle_response(response: ProviderResponse) -> Dict[str, Any]:
+    """
+    Helper function to convert ProviderResponse to dictionary.
+    
+    Args:
+        response (ProviderResponse): Response to convert
+        
+    Returns:
+        Dict[str, Any]: Converted response
+    """
+    return response.model_dump()
+
 def get_page_insights(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
     Get page insights with automatic retry on failure.
@@ -25,39 +37,39 @@ def get_page_insights(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
     # Validate payload
     if not payload.get("account") or not payload["account"].get("access_token"):
-        return ProviderResponse(
+        return _handle_response(ProviderResponse(
             status="error",
             message="Missing access token in account information",
             data={"error": "missing_access_token"}
-        ).model_dump()
+        ))
         
     if not payload["account"].get("business_id"):
-        return ProviderResponse(
+        return _handle_response(ProviderResponse(
             status="error",
             message="Missing business ID in account information",
             data={"error": "missing_business_id"}
-        ).model_dump()
+        ))
         
     if not payload.get("page_id"):
-        return ProviderResponse(
+        return _handle_response(ProviderResponse(
             status="error",
             message="Missing page ID in payload",
             data={"error": "missing_page_id"}
-        ).model_dump()
+        ))
         
     if not payload.get("metric"):
-        return ProviderResponse(
+        return _handle_response(ProviderResponse(
             status="error",
             message="Missing metric in payload",
             data={"error": "missing_metric"}
-        ).model_dump()
+        ))
         
     if not payload.get("period"):
-        return ProviderResponse(
+        return _handle_response(ProviderResponse(
             status="error",
             message="Missing period in payload",
             data={"error": "missing_period"}
-        ).model_dump()
+        ))
     
     max_retries = 3
     retry_count = 0

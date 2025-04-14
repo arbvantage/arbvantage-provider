@@ -35,6 +35,18 @@ class Action:
     account_schema: Dict[str, Type]
     rate_limit_monitor: Optional[RateLimitMonitor] = None
 
+    def _handle_response(self, response: ProviderResponse) -> Dict[str, Any]:
+        """
+        Helper method to convert ProviderResponse to dictionary.
+        
+        Args:
+            response (ProviderResponse): Response to convert
+            
+        Returns:
+            Dict[str, Any]: Converted response
+        """
+        return response.model_dump()
+
     def execute(self, *args, **kwargs) -> Any:
         """
         Execute the action with rate limiting if configured.
@@ -53,11 +65,11 @@ class Action:
                 if limits and limits.get("rate_limited"):
                     wait_time = limits.get("wait_time", 1.0)
                     self.rate_limit_monitor.handle_throttling(wait_time)
-                    return ProviderResponse(
+                    return self._handle_response(ProviderResponse(
                         status="limit",
                         message=f"Rate limit exceeded. Please wait {wait_time} seconds",
                         data={"wait_time": wait_time}
-                    ).model_dump()
+                    ))
                     
                 # Execute the action
                 result = self.handler(*args, **kwargs)
@@ -69,11 +81,11 @@ class Action:
             return self.handler(*args, **kwargs)
             
         except Exception as e:
-            return ProviderResponse(
+            return self._handle_response(ProviderResponse(
                 status="error",
                 message="Error executing action",
                 data={"error": str(e)}
-            ).model_dump()
+            ))
 
 class ActionsRegistry:
     """

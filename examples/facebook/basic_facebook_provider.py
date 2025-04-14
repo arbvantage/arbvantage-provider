@@ -239,9 +239,9 @@ class BasicFacebookProvider(Provider):
             }
         )(get_page_insights)
                     
-    def execute_action(self, action_name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def process_task(self, action: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Execute an action with rate limit monitoring and error handling.
+        Process a task with rate limit monitoring and error handling.
         
         This method:
         1. Updates rate limit monitor with current access token
@@ -249,7 +249,7 @@ class BasicFacebookProvider(Provider):
         3. Handles any execution errors
         
         Args:
-            action_name (str): Name of the registered action to execute
+            action (str): Name of the registered action to execute
             payload (Dict[str, Any]): Action parameters including account credentials
             
         Returns:
@@ -262,7 +262,7 @@ class BasicFacebookProvider(Provider):
         if "account" in payload and "access_token" in payload["account"]:
             self.rate_limit_monitor.set_access_token(payload["account"]["access_token"])
             
-        return super().execute_action(action_name, payload)
+        return super().process_task(action, payload)
 
 if __name__ == "__main__":
     """
