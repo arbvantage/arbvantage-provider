@@ -218,6 +218,8 @@ class Provider:
             action_params = {
                 'payload': {},  # By default, we pass empty payload
                 'account': {},  # By default, we pass empty account
+                'provider_name': self.name,
+                'provider_token': self.auth_token,
             }
 
             # Filter payload parameters only if schema exists
