@@ -189,6 +189,13 @@ class Provider:
         """
         sig = inspect.signature(handler)
         accepted_params = sig.parameters.keys()
+        has_kwargs = any(
+            p.kind == inspect.Parameter.VAR_KEYWORD
+            for p in sig.parameters.values()
+        )
+        if has_kwargs:
+            # If handler accepts **kwargs, pass all params
+            return params
         # Only keep parameters that the handler actually accepts
         return {k: v for k, v in params.items() if k in accepted_params}
 
