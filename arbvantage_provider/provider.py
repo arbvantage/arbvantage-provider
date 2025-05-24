@@ -309,8 +309,7 @@ class Provider:
             # Execute action and validate response
             self.logger.info(
                 "Executing action",
-                action=action,
-                params=action_params
+                action=action
             )
             
             # Filter parameters before passing to the handler
