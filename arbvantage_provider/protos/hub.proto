@@ -11,7 +11,7 @@ message ProviderRequest {
 
 // TaskResult: Message sent by a provider to submit the result of a processed task.
 // Fields:
-//   task_id: Unique identifier for the task.
+//   id: Unique identifier for the task.
 //   provider: Name of the provider submitting the result.
 //   auth_token: Authentication token for the provider.
 //   status: Status of the task execution (e.g., success, error).
@@ -20,7 +20,7 @@ message ProviderRequest {
 //   result: The result of the action (as a string).
 //   account: Optional account information as a key-value map.
 message TaskResult {
-    string task_id = 1;
+    string id = 1;
     string provider = 2;
     string auth_token = 3;
     string status = 4;
@@ -32,12 +32,12 @@ message TaskResult {
 
 // Task: Message representing a task assigned to a provider by the Hub.
 // Fields:
-//   task_id: Unique identifier for the task.
+//   id: Unique identifier for the task.
 //   action: Name of the action to execute.
 //   payload: The payload for the action (as bytes).
 //   account: Optional account information as a key-value map.
 message Task {
-    string task_id = 1;
+    string id = 1;
     string action = 2;
     bytes payload = 3;
     map<string, string> account = 4;

@@ -420,13 +420,13 @@ class Provider:
                     auth_token=self.auth_token
                 ))
 
-                if not task.task_id:
+                if not task.id:
                     time.sleep(self.execution_timeout)
                     continue
 
                 self.logger.info(
                     "Received task",
-                    task_id=task.task_id,
+                    id=task.id,
                     action=task.action
                 )
                 
@@ -440,7 +440,7 @@ class Provider:
 
                     # Submit task result back to Hub
                     stub.SubmitTaskResult(hub_pb2.TaskResult(
-                        task_id=task.task_id,
+                        id=task.id,
                         provider=self.name,
                         auth_token=self.auth_token,
                         payload=json.dumps(payload),
@@ -452,7 +452,7 @@ class Provider:
                     
                     self.logger.info(
                         "Task completed",
-                        task_id=task.task_id,
+                        id=task.id,
                         status=status
                     )
                     
@@ -467,7 +467,7 @@ class Provider:
                         data={"error": str(e)}
                     ).model_dump()
                     stub.SubmitTaskResult(hub_pb2.TaskResult(
-                        task_id=task.task_id,
+                        id=task.id,
                         provider=self.name,
                         auth_token=self.auth_token,
                         status="error",
@@ -499,9 +499,9 @@ class Provider:
                         "code": str(error_code)
                     }
                 ).model_dump()
-                if task.task_id:
+                if task.id:
                     stub.SubmitTaskResult(hub_pb2.TaskResult(
-                        task_id=task.task_id,
+                        id=task.id,
                         provider=self.name,
                         auth_token=self.auth_token,
                         status="error",
@@ -520,9 +520,9 @@ class Provider:
                     message="Unexpected error occurred",
                     data={"error": str(e)}
                 ).model_dump()
-                if task.task_id:
+                if task.id:
                     stub.SubmitTaskResult(hub_pb2.TaskResult(
-                        task_id=task.task_id,
+                        id=task.id,
                         provider=self.name,
                         auth_token=self.auth_token,
                         status="error",
