@@ -285,8 +285,7 @@ class Provider:
                 'provider': {
                     'name': self.name,
                     'token': self.auth_token,
-                },
-                'logger': self.logger,
+                },                
                 'timezone': self.timezone,
                 'now': datetime.now(self._tzinfo).isoformat(),
                 'now_utc': datetime.now(ZoneInfo("UTC")).isoformat(),
