@@ -438,7 +438,7 @@ class Provider:
                 try:
                     payload = json.loads(task.payload.decode('utf-8'))
                     action = task.action
-                    account = task.account
+                    account = json.loads(task.account.decode('utf-8')) if task.account else {}
                     
                     result = self.process_task(action, payload, account)
                     status = result["status"]
