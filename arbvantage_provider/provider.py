@@ -166,7 +166,7 @@ class Provider:
                 "timezone": str(self._tzinfo),
                 "now": now.isoformat(),
                 "now_utc": now_utc.isoformat(),
-                "result": response_dict["data"] or {}
+                "response": response_dict["data"] or {}
             }
             response_dict["data"] = data
         return response_dict
