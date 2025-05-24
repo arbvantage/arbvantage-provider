@@ -232,7 +232,7 @@ class Provider:
                     status="limit",
                     message=f"Rate limit exceeded: {limits.get('message')}",
                     data={"wait_time": limits.get("wait_time")}
-                ))
+                ), action=action)
 
             action_def = self.actions.get_action(action)
             if not action_def:
@@ -241,7 +241,7 @@ class Provider:
                     action=action,
                     available_actions=list(self.actions.get_actions().keys())
                 )
-                return self._handle_response(ProviderResponse(status="error", message=f"Action '{action}' not found"))
+                return self._handle_response(ProviderResponse(status="error", message=f"Action '{action}' not found"), action=action)
 
             # Check action-specific rate limits if action supports it
             if hasattr(action_def, 'check_rate_limits'):
@@ -256,7 +256,7 @@ class Provider:
                         status="limit",
                         message=f"Action-specific rate limit exceeded: {limits.get('message')}",
                         data={"wait_time": limits.get("wait_time")}
-                    ))
+                    ), action=action)
 
             # Validate required parameters for payload if schema exists
             if hasattr(action_def, 'payload_schema') and action_def.payload_schema:
@@ -270,7 +270,7 @@ class Provider:
                         action=action,
                         missing_params=missing_params
                     )
-                    return self._handle_response(ProviderResponse(status="error", message=f"Missing required parameters: {', '.join(missing_params)}"))
+                    return self._handle_response(ProviderResponse(status="error", message=f"Missing required parameters: {', '.join(missing_params)}"), action=action)
             
             # Validate required parameters for account if schema exists
             if hasattr(action_def, 'account_schema') and action_def.account_schema:
@@ -284,7 +284,7 @@ class Provider:
                         action=action,
                         missing_params=missing_account_params
                     )
-                    return self._handle_response(ProviderResponse(status="error", message=f"Missing required account parameters: {', '.join(missing_account_params)}"))
+                    return self._handle_response(ProviderResponse(status="error", message=f"Missing required account parameters: {', '.join(missing_account_params)}"), action=action)
             
             action_params = {
                 'payload': {},  # By default, we pass empty payload
@@ -345,7 +345,7 @@ class Provider:
                 status=result.status
             )
             
-            return self._handle_response(result)
+            return self._handle_response(result, action=action)
 
         except Exception as e:
             self.logger.exception(
@@ -353,7 +353,7 @@ class Provider:
                 action=action,
                 error=str(e)
             )
-            return self._handle_response(ProviderResponse(status="error", message=str(e)))
+            return self._handle_response(ProviderResponse(status="error", message=str(e)), action=action)
 
     def start(self):
         """
