@@ -1,12 +1,21 @@
 """
-Example of a provider with async operation support.
+Async Provider Example
 
-This example demonstrates how to implement async operations in a provider.
-It shows:
-- Async/await syntax usage
-- Concurrent task execution
-- Error handling in async context
-- Rate limiting with async operations
+This example demonstrates how to implement a provider with async operation support using the Arbvantage Provider Framework.
+It shows how to:
+1. Use async/await syntax for concurrent HTTP requests
+2. Register async actions
+3. Handle rate limiting in async context
+4. Clean up async resources
+
+Environment variables required:
+- PROVIDER_NAME: Name of the provider (defaults to "async-provider")
+- PROVIDER_AUTH_TOKEN: Authentication token for the hub
+- HUB_GRPC_URL: URL of the hub service (defaults to "hub-grpc:50051")
+
+Why is this important?
+-----------------------------------
+Async operations allow you to handle many concurrent I/O-bound tasks efficiently, which is critical for high-performance providers.
 """
 
 import os
@@ -22,6 +31,10 @@ class AsyncProvider(Provider):
     
     This provider demonstrates how to implement async operations.
     It uses aiohttp for async HTTP requests and handles concurrent tasks.
+    
+    Why is this important?
+    -----------------------------------
+    Shows how to build scalable providers that can handle many concurrent requests.
     """
     
     def __init__(self):
@@ -58,10 +71,12 @@ class AsyncProvider(Provider):
             Fetch multiple URLs concurrently.
             
             Args:
-                payload: Dictionary containing list of URLs
-                
+                payload (dict): Must contain 'urls' as a list of URLs.
             Returns:
-                ProviderResponse with fetched data
+                ProviderResponse: status 'success' and fetched data.
+            Why is this important?
+            -----------------------------------
+            Demonstrates concurrent I/O with async/await and error handling for each request.
             """
             urls = payload["urls"]
             
@@ -103,10 +118,12 @@ class AsyncProvider(Provider):
             Fetch URL with retry logic.
             
             Args:
-                payload: Dictionary containing URL and max retries
-                
+                payload (dict): Must contain 'url' and optionally 'max_retries'.
             Returns:
-                ProviderResponse with fetched data
+                ProviderResponse: status 'success' and fetched data, or 'error' on failure.
+            Why is this important?
+            -----------------------------------
+            Shows how to implement retry logic and exponential backoff in async context.
             """
             url = payload["url"]
             max_retries = payload.get("max_retries", 3)
@@ -161,10 +178,12 @@ class AsyncProvider(Provider):
         Fetch single URL with rate limiting.
         
         Args:
-            url: URL to fetch
-            
+            url (str): URL to fetch
         Returns:
-            Dictionary with response data
+            dict: Response data
+        Why is this important?
+        -----------------------------------
+        Shows how to combine rate limiting and async HTTP requests.
         """
         # Check rate limits
         limits = self.rate_limit_monitor.check_rate_limits()
@@ -179,11 +198,18 @@ class AsyncProvider(Provider):
                 raise Exception(f"HTTP {response.status}")
                 
     async def cleanup(self):
-        """Cleanup resources."""
+        """Cleanup resources (close aiohttp session)."""
         if self.session:
             await self.session.close()
             
 if __name__ == "__main__":
+    """
+    Run the provider if this script is executed directly.
+    
+    Why is this important?
+    -----------------------------------
+    This allows you to test async actions and resource cleanup before integrating with the hub.
+    """
     provider = AsyncProvider()
     try:
         provider.start()

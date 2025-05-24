@@ -1,12 +1,23 @@
 """
-Example of a provider with Redis caching support.
+Redis Cached Provider Example
 
-This example demonstrates how to implement caching using Redis in a provider.
-It shows:
-- Redis connection management
-- Cache key generation
-- Cache invalidation
-- Cache TTL management
+This example demonstrates how to implement a provider with Redis caching support using the Arbvantage Provider Framework.
+It shows how to:
+1. Connect to a Redis instance
+2. Cache API responses and manage TTL
+3. Invalidate cache entries
+
+Environment variables required:
+- PROVIDER_NAME: Name of the provider (defaults to "redis-cached-provider")
+- PROVIDER_AUTH_TOKEN: Authentication token for the hub
+- HUB_GRPC_URL: URL of the hub service (defaults to "hub-grpc:50051")
+- REDIS_HOST: Redis server host (defaults to "localhost")
+- REDIS_PORT: Redis server port (defaults to 6379)
+- REDIS_DB: Redis database number (defaults to 0)
+
+Why is this important?
+-----------------------------------
+Caching is critical for performance and scalability. This example shows how to use Redis for caching in a provider.
 """
 
 import os
@@ -21,6 +32,10 @@ class RedisCachedProvider(Provider):
     
     This provider demonstrates how to implement caching using Redis.
     It caches API responses and invalidates cache when needed.
+    
+    Why is this important?
+    -----------------------------------
+    Shows how to use external cache systems to improve performance and reduce load on APIs.
     """
     
     def __init__(self):
@@ -54,10 +69,12 @@ class RedisCachedProvider(Provider):
             Get user data with Redis caching.
             
             Args:
-                payload: Dictionary containing user_id
-                
+                payload (dict): Must contain 'user_id'.
             Returns:
-                ProviderResponse with user data
+                ProviderResponse: status 'success' and user data, or 'error' on failure.
+            Why is this important?
+            -----------------------------------
+            Shows how to implement read-through caching and TTL management.
             """
             user_id = payload["user_id"]
             cache_key = f"user:{user_id}"
@@ -99,10 +116,12 @@ class RedisCachedProvider(Provider):
             Invalidate user data cache.
             
             Args:
-                payload: Dictionary containing user_id
-                
+                payload (dict): Must contain 'user_id'.
             Returns:
-                ProviderResponse with invalidation status
+                ProviderResponse: status 'success' and invalidation result.
+            Why is this important?
+            -----------------------------------
+            Shows how to explicitly invalidate cache entries when data changes.
             """
             user_id = payload["user_id"]
             cache_key = f"user:{user_id}"
@@ -121,10 +140,12 @@ class RedisCachedProvider(Provider):
         Simulate fetching user data from an API.
         
         Args:
-            user_id: User identifier
-            
+            user_id (str): User identifier
         Returns:
-            Dictionary with user data
+            dict: User data
+        Why is this important?
+        -----------------------------------
+        In a real provider, this would call an external API or database. Here, it simulates a data source.
         """
         # In a real implementation, this would make an API call
         return {
@@ -135,5 +156,12 @@ class RedisCachedProvider(Provider):
         }
 
 if __name__ == "__main__":
+    """
+    Run the provider if this script is executed directly.
+    
+    Why is this important?
+    -----------------------------------
+    This allows you to test caching logic before integrating with the hub.
+    """
     provider = RedisCachedProvider()
     provider.start() 

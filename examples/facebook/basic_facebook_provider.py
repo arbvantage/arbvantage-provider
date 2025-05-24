@@ -1,25 +1,29 @@
 """
 Basic Facebook Provider Example
 
-This example demonstrates the basic usage of the Facebook provider.
+This example demonstrates the basic usage of the Facebook provider using the Arbvantage Provider Framework.
 It shows how to:
 1. Initialize the Facebook provider
 2. Register basic actions
-3. Handle authentication
+3. Handle authentication and account schema
 4. Use rate limiting with FacebookAdsApi.get_usage()
 5. Use structured logging with ProviderLogger
 6. Use built-in rate limit monitor support
 
-Configuration Environment Variables:
-    PROVIDER_NAME: Custom name for the provider instance (default: "basic-facebook")
-    PROVIDER_AUTH_TOKEN: Authentication token for the provider
-    HUB_GRPC_URL: URL for the gRPC hub connection (default: "hub-grpc:50051")
+Environment variables required:
+- PROVIDER_NAME: Custom name for the provider instance (default: "basic-facebook")
+- PROVIDER_AUTH_TOKEN: Authentication token for the provider
+- HUB_GRPC_URL: URL for the gRPC hub connection (default: "hub-grpc:50051")
 
 Dependencies:
-    - arbvantage_provider: Core provider functionality
-    - facebook_business: Official Facebook Business SDK
-    - logging: Python standard logging
-    - typing: Type hints support
+- arbvantage_provider: Core provider functionality
+- facebook_business: Official Facebook Business SDK
+- logging: Python standard logging
+- typing: Type hints support
+
+Why is this important?
+-----------------------------------
+This example shows how to integrate with the Facebook API, handle authentication, rate limiting, and structured logging in a real-world provider.
 """
 
 from arbvantage_provider import Provider
@@ -51,9 +55,9 @@ class FacebookRateLimitMonitor(AdvancedRateLimitMonitor):
     - Providing wait times when limits are approached
     - Logging rate limit metrics for monitoring
     
-    Attributes:
-        access_token (str): Facebook API access token for making requests
-        logger (ProviderLogger): Structured logger for rate limit events
+    Why is this important?
+    -----------------------------------
+    Shows how to implement custom rate limiting for third-party APIs with their own usage metrics.
     """
     
     def __init__(self, **kwargs):
@@ -95,14 +99,10 @@ class FacebookRateLimitMonitor(AdvancedRateLimitMonitor):
         Returns:
             Optional[Dict[str, Any]]: ProviderResponse with status "limit" if limits 
             are exceeded, None if no limits are exceeded
-            
-        Response Data Structure:
-            {
-                "wait_time": int,        # Seconds to wait before next request
-                "calls_made": int,       # Number of API calls made
-                "total_calls": int,      # Total allowed API calls
-                "time_remaining": int    # Time until limits reset
-            }
+        
+        Why is this important?
+        -----------------------------------
+        Shows how to use third-party SDKs to monitor and enforce rate limits.
         """
         if not self._is_active:
             return None
@@ -180,6 +180,10 @@ class BasicFacebookProvider(Provider):
         auth_token (str): Provider authentication token
         hub_url (str): gRPC hub connection URL
         rate_limit_monitor (FacebookRateLimitMonitor): Rate limit monitoring configuration
+    
+    Why is this important?
+    -----------------------------------
+    Shows how to build a real-world provider for a major third-party API with all best practices.
     """
     
     def __init__(self):
@@ -248,15 +252,9 @@ class BasicFacebookProvider(Provider):
         2. Executes the requested action with rate limit protection
         3. Handles any execution errors
         
-        Args:
-            action (str): Name of the registered action to execute
-            payload (Dict[str, Any]): Action parameters including account credentials
-            
-        Returns:
-            Dict[str, Any]: Action execution result or error response
-            
-        Raises:
-            Any exceptions from action execution are logged and returned as error responses
+        Why is this important?
+        -----------------------------------
+        Shows how to combine action execution with dynamic rate limit configuration and error handling.
         """
         # Update access token in rate limit monitor
         if "account" in payload and "access_token" in payload["account"]:

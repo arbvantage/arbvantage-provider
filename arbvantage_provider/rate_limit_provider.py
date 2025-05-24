@@ -19,7 +19,9 @@ Key features:
 - Detailed logging
 """
 
+# Import typing for type hints and flexibility in monitor selection.
 from typing import Dict, Any, Optional, Type
+# Import all available rate limit monitor classes for flexible strategy selection.
 from .rate_limit import (
     RateLimitMonitor,
     TimeBasedRateLimitMonitor,
@@ -30,24 +32,20 @@ from .rate_limit import (
 
 class RateLimitProvider:
     """
-    Provider for rate limiting functionality.
-    Manages rate limit monitors and configurations.
+    High-level provider for managing rate limiting strategies and configurations.
     
-    This class provides a high-level interface for rate limiting:
-    1. Initialization with different monitor types
-    2. Configuration management
-    3. Rate limit checking
-    4. Safe request execution
-    5. Monitoring and metrics
+    This class acts as a wrapper around different rate limit monitor implementations.
+    It allows you to:
+    - Choose a rate limiting strategy (time-based, advanced, custom, or none)
+    - Configure and update rate limiting parameters at runtime
+    - Safely execute requests with automatic rate limit checks
+    - Retrieve and update current configuration
     
-    The provider supports multiple rate limiting strategies:
-    - Time-based rate limiting
-    - Advanced rate limiting with thresholds
-    - Custom rate limiting with sliding window
-    - No rate limiting (pass-through)
-    
-    By default, it uses NoRateLimitMonitor to avoid
-    unnecessary overhead when rate limiting is not needed.
+    Why is this important?
+    -----------------------------------
+    Centralizing rate limit logic in a dedicated provider makes your code modular and testable.
+    You can easily swap out strategies or update configuration without changing business logic.
+    This is especially useful for APIs with changing or complex rate limit requirements.
     """
     
     def __init__(
@@ -56,18 +54,13 @@ class RateLimitProvider:
         **monitor_kwargs
     ):
         """
-        Initialize rate limit provider.
+        Initialize the RateLimitProvider with a specific rate limit monitor class and configuration.
         
         Args:
-            monitor_class (Type[RateLimitMonitor]): 
-                Class of rate limit monitor to use.
-                Defaults to NoRateLimitMonitor for no rate limiting.
-                
-            **monitor_kwargs: 
-                Arguments to pass to monitor constructor.
-                These depend on the specific monitor class.
-                
-        Example:
+            monitor_class (Type[RateLimitMonitor]): The class of rate limit monitor to use.
+            **monitor_kwargs: Configuration parameters for the monitor class.
+        
+        Example usage:
             # No rate limiting (default)
             provider = RateLimitProvider()
             
@@ -77,95 +70,69 @@ class RateLimitProvider:
                 min_delay=1.0,
                 max_calls_per_second=1
             )
-            
-            # Advanced rate limiting
-            provider = RateLimitProvider(
-                monitor_class=AdvancedRateLimitMonitor,
-                min_delay=0.5,
-                max_calls_per_second=2,
-                warning_threshold=0.8,
-                critical_threshold=0.9
-            )
         """
+        # Create the monitor instance using the provided class and configuration.
         self.monitor = monitor_class(**monitor_kwargs)
+        # Store the configuration for future reference or updates.
         self._config = monitor_kwargs
         
     def check_rate_limits(self) -> Optional[Dict[str, Any]]:
         """
-        Check current rate limits.
-        
-        This method:
-        1. Delegates to the underlying monitor
-        2. Returns rate limit information if exceeded
-        3. Returns None if within limits
+        Check if the current rate limit is exceeded.
         
         Returns:
-            Optional[Dict[str, Any]]: 
-                Rate limit information if exceeded, None otherwise.
-                The structure depends on the monitor type.
+            Optional[Dict[str, Any]]: Rate limit information if exceeded, None otherwise.
+        
+        This method is useful for checking limits before making expensive API calls.
         """
+        # Delegate the check to the underlying monitor.
         return self.monitor.check_rate_limits()
         
     def make_safe_request(self, request_func: callable, *args, **kwargs) -> Any:
         """
-        Execute request with rate limit consideration.
-        
-        This method:
-        1. Checks rate limits
-        2. Handles throttling if needed
-        3. Executes the request
-        4. Returns the result
+        Execute a request function with rate limit checks and throttling if needed.
         
         Args:
-            request_func (callable): Function to execute
-            *args: Positional arguments for the function
-            **kwargs: Keyword arguments for the function
-            
+            request_func (callable): The function to execute.
+            *args: Positional arguments for the function.
+            **kwargs: Keyword arguments for the function.
+        
         Returns:
-            Any: Result of the request function
-            
-        Example:
-            result = provider.make_safe_request(
-                my_api_call,
-                arg1,
-                arg2,
-                param1=value1,
-                param2=value2
-            )
+            Any: The result of the request function.
+        
+        This method ensures you never exceed API limits and can handle rate limit errors gracefully.
         """
+        # Delegate the safe execution to the monitor.
         return self.monitor.make_safe_request(request_func, *args, **kwargs)
         
     def get_config(self) -> Dict[str, Any]:
         """
-        Get current rate limit configuration.
+        Get the current rate limit configuration as a dictionary.
         
         Returns:
-            Dict[str, Any]: 
-                Current configuration as a dictionary.
-                This can be used to save/restore configuration.
+            Dict[str, Any]: The current configuration.
+        
+        Useful for saving, restoring, or inspecting the current settings.
         """
+        # Return a copy of the configuration to prevent accidental modification.
         return self._config.copy()
         
     def update_config(self, **new_config) -> None:
         """
-        Update rate limit configuration.
-        
-        This method:
-        1. Updates the configuration
-        2. Recreates the monitor with new settings
-        3. Preserves the monitor type
+        Update the rate limit configuration and recreate the monitor with new settings.
         
         Args:
-            **new_config: New configuration values
-            
-        Example:
+            **new_config: New configuration values to update.
+        
+        Example usage:
             provider.update_config(
                 min_delay=2.0,
                 max_calls_per_second=2
             )
         """
+        # Update the configuration dictionary.
         self._config.update(new_config)
-        # Recreate monitor with new config
+        # Recreate the monitor with the new configuration.
         self.monitor = self.monitor.__class__(**self._config)
 
 # Example usage:

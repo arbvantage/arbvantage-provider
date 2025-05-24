@@ -1,12 +1,27 @@
 """
-Campaign Management Example
+Facebook Campaign Management Example
 
-This example demonstrates how to work with Facebook campaigns using the provider.
+This example demonstrates how to work with Facebook campaigns using the Arbvantage Provider Framework.
 It shows how to:
 1. Create and manage campaigns
-2. Handle campaign status
+2. Handle campaign status and performance
 3. Work with ad sets and ads
 4. Use rate limiting for campaign operations
+
+Environment variables required:
+- PROVIDER_NAME: Name of the provider (defaults to "campaign-provider")
+- PROVIDER_AUTH_TOKEN: Authentication token for the hub
+- HUB_GRPC_URL: URL of the hub service (defaults to "hub-grpc:50051")
+
+Dependencies:
+- arbvantage_provider: Core provider functionality
+- facebook_business: Official Facebook Business SDK
+- logging: Python standard logging
+- typing: Type hints support
+
+Why is this important?
+-----------------------------------
+This example shows how to automate Facebook campaign management, handle API errors, and use rate limiting in real-world scenarios.
 """
 
 from arbvantage_provider import Provider
@@ -37,6 +52,10 @@ class CampaignProvider(Provider):
     - Status tracking
     - Ad set and ad management
     - Rate limiting for campaign operations
+    
+    Why is this important?
+    -----------------------------------
+    Shows how to automate campaign management and handle Facebook API integration in production.
     """
     
     def __init__(self):
@@ -67,9 +86,17 @@ class CampaignProvider(Provider):
                 "app_secret": str
             }
         )
-        def create_campaign(payload: Dict[str, Any]) -> Dict[str, Any]:
+        def create_campaign(payload: Dict[str, Any]) -> ProviderResponse:
             """
             Create a new campaign with specified parameters.
+            
+            Args:
+                payload (dict): Must contain 'name', 'objective', 'status', 'budget', 'start_time', and 'account' with credentials.
+            Returns:
+                ProviderResponse: status 'success' and campaign data, or 'error' on failure.
+            Why is this important?
+            -----------------------------------
+            Shows how to create Facebook campaigns and handle API authentication and errors.
             """
             try:
                 # Initialize Facebook API
@@ -131,9 +158,17 @@ class CampaignProvider(Provider):
                 "access_token": str
             }
         )
-        def get_campaign_status(payload: Dict[str, Any]) -> Dict[str, Any]:
+        def get_campaign_status(payload: Dict[str, Any]) -> ProviderResponse:
             """
             Get detailed status and performance metrics for a campaign.
+            
+            Args:
+                payload (dict): Must contain 'campaign_id' and 'account' with credentials.
+            Returns:
+                ProviderResponse: status 'success' and campaign metrics, or 'error' on failure.
+            Why is this important?
+            -----------------------------------
+            Shows how to retrieve campaign status and insights from Facebook API.
             """
             try:
                 # Initialize Facebook API
@@ -200,9 +235,17 @@ class CampaignProvider(Provider):
                 "access_token": str
             }
         )
-        def update_campaign_budget(payload: Dict[str, Any]) -> Dict[str, Any]:
+        def update_campaign_budget(payload: Dict[str, Any]) -> ProviderResponse:
             """
             Update campaign budget with validation.
+            
+            Args:
+                payload (dict): Must contain 'campaign_id', 'budget', and 'account' with credentials.
+            Returns:
+                ProviderResponse: status 'success' and updated budget, or 'error' on failure.
+            Why is this important?
+            -----------------------------------
+            Shows how to update campaign fields and validate input data.
             """
             try:
                 # Validate budget
@@ -248,7 +291,11 @@ class CampaignProvider(Provider):
 
 if __name__ == "__main__":
     """
-    Entry point for running the provider as a standalone service.
+    Run the campaign management provider as a standalone service.
+    
+    Why is this important?
+    -----------------------------------
+    This allows you to test campaign management logic before integrating with the hub.
     """
     provider = CampaignProvider()
     provider.start() 

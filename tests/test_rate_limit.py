@@ -10,6 +10,19 @@ from arbvantage_provider.rate_limit import (
 from arbvantage_provider.rate_limit_provider import RateLimitProvider
 
 class TestRateLimit(unittest.TestCase):
+    """
+    Unit tests for all rate limiting strategies and the RateLimitProvider.
+    
+    These tests verify that:
+    - Each rate limit monitor enforces limits as expected
+    - Configuration updates are applied correctly
+    - No delays occur when using NoRateLimitMonitor
+    
+    Why is this important?
+    -----------------------------------
+    Testing rate limiting ensures that your application respects API limits,
+    avoids throttling, and behaves predictably under load.
+    """
     def setUp(self):
         self.mock_request = MagicMock(return_value="success")
 

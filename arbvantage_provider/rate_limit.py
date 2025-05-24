@@ -26,16 +26,17 @@ logger = logging.getLogger(__name__)
 
 class RateLimitMonitor(ABC):
     """
-    Abstract base class for rate limit monitors.
-    Implement this class to create custom rate limiting strategies.
+    Abstract base class for all rate limit monitors.
     
-    This class defines the interface that all rate limit monitors must implement:
-    - check_rate_limits(): Check if rate limit is exceeded
-    - handle_throttling(): Handle throttling when limit is exceeded
-    - make_safe_request(): Execute request with rate limit consideration
+    This class defines the interface for rate limiting strategies. Subclasses must implement:
+    - check_rate_limits(): Check if the rate limit is exceeded
+    - handle_throttling(): Handle waiting/throttling when limit is exceeded
+    - make_safe_request(): Execute a request with rate limit consideration
     
-    Subclasses should implement these methods according to their specific
-    rate limiting strategy while maintaining thread safety.
+    Why is this important?
+    -----------------------------------
+    Using an abstract base class ensures all rate limit monitors follow a consistent interface.
+    This makes it easy to swap out different strategies without changing the rest of your codebase.
     """
     
     @abstractmethod
@@ -98,6 +99,13 @@ class TimeBasedRateLimitMonitor(RateLimitMonitor):
     """
     Simple time-based rate limit monitor.
     Uses fixed delays between requests.
+    
+    This monitor enforces a minimum delay between requests, ensuring that
+    you do not exceed a certain rate of API calls. This is useful for APIs
+    that have simple rate limits (e.g., no more than 1 request per second).
+    
+    Thread safety is ensured using a lock, so this monitor can be used in
+    multi-threaded environments.
     """
     
     def __init__(self, min_delay: float = 1.0, max_calls_per_second: int = 1, timezone: str = "UTC"):
@@ -145,6 +153,12 @@ class AdvancedRateLimitMonitor(RateLimitMonitor):
     """
     Advanced rate limit monitor with warning thresholds.
     Provides early warnings when approaching rate limits.
+    
+    This monitor tracks the rate of requests in real time and can trigger
+    warnings or critical alerts as you approach the configured thresholds.
+    This is useful for APIs with strict rate limits or for monitoring usage.
+    
+    Thread safety is ensured using a lock.
     """
     
     def __init__(
@@ -212,6 +226,12 @@ class CustomRateLimitMonitor(RateLimitMonitor):
     """
     Custom rate limit monitor with sliding window approach.
     Provides more granular control over rate limiting.
+    
+    This monitor keeps track of all requests within a sliding time window
+    (e.g., 100 requests per 60 seconds). This is useful for APIs that use
+    rolling window rate limits.
+    
+    Thread safety is ensured using a lock.
     """
     
     def __init__(self, window_size: int = 60, max_requests: int = 100):
@@ -258,21 +278,11 @@ class CustomRateLimitMonitor(RateLimitMonitor):
 
 class NoRateLimitMonitor(RateLimitMonitor):
     """
-    Rate limit monitor that never limits requests.
-    This is a pass-through implementation that allows all requests.
+    No rate limiting (pass-through implementation).
     
-    This monitor is useful when:
-    1. No rate limiting is needed
-    2. Rate limiting is handled externally
-    3. Testing and development
-    4. High-performance scenarios
-    
-    The monitor implements all required methods but:
-    - Never returns rate limit information
-    - Never throttles requests
-    - Simply passes through all requests
-    
-    This is the default monitor for new providers and actions.
+    This monitor does not enforce any rate limits. All requests are allowed
+    to proceed immediately. This is useful for development, testing, or APIs
+    that do not require rate limiting.
     """
     
     def __init__(self):

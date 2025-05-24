@@ -1,6 +1,20 @@
 """
-Example of a provider with different rate limiting strategies.
-This example demonstrates various approaches to rate limiting in providers.
+Rate Limit Provider Example
+
+This example demonstrates various approaches to rate limiting in providers using the Arbvantage Provider Framework.
+It shows how to:
+1. Use global, action-specific, and custom rate limit monitors
+2. Register actions with different rate limiting strategies
+3. Implement a custom rate limit monitor
+
+Environment variables required:
+- PROVIDER_NAME: Name of the provider (defaults to "rate-limit-provider")
+- PROVIDER_AUTH_TOKEN: Authentication token for the hub
+- HUB_GRPC_URL: URL of the hub service (defaults to "hub-grpc:50051")
+
+Why is this important?
+-----------------------------------
+Correct rate limiting is critical for API safety, compliance, and fair usage. This example shows how to use and extend the framework's rate limiting features.
 """
 
 from typing import Dict, Any, Optional
@@ -15,8 +29,8 @@ import threading
 
 class CustomRateLimitMonitor(RateLimitMonitor):
     """
-    Custom rate limit monitor implementation.
-    This monitor uses a sliding window approach with thread-safe counters.
+    Custom rate limit monitor implementation using a sliding window approach.
+    This monitor is thread-safe and can be used for more granular rate limiting.
     """
     
     def __init__(self, max_requests: int = 100, window_size: int = 60):
@@ -90,6 +104,10 @@ class RateLimitProvider(Provider):
     """
     Example provider demonstrating different rate limiting approaches.
     This provider shows how to implement rate limiting at different levels.
+    
+    Why is this important?
+    -----------------------------------
+    Shows how to use global, action-specific, and custom rate limit monitors in practice.
     """
     
     def __init__(self):
@@ -141,8 +159,7 @@ class RateLimitProvider(Provider):
             Action using the provider's global rate limit.
             
             Args:
-                payload: Action payload
-                
+                payload: Action payload (must contain 'param')
             Returns:
                 Action result
             """
@@ -160,7 +177,6 @@ class RateLimitProvider(Provider):
             
             Args:
                 payload: Action payload containing endpoint and parameters
-                
             Returns:
                 API call result
             """
@@ -187,8 +203,7 @@ class RateLimitProvider(Provider):
             Action using custom rate limit monitor.
             
             Args:
-                payload: Action payload
-                
+                payload: Action payload (must contain 'param')
             Returns:
                 Action result
             """
@@ -201,7 +216,6 @@ class RateLimitProvider(Provider):
         Args:
             endpoint: API endpoint
             params: Request parameters
-            
         Returns:
             API response
         """
@@ -210,6 +224,12 @@ class RateLimitProvider(Provider):
         return {"endpoint": endpoint, "params": params}
 
 if __name__ == "__main__":
-    # Create and start the provider
+    """
+    Run the provider if this script is executed directly.
+    
+    Why is this important?
+    -----------------------------------
+    This allows you to test rate limiting strategies in isolation before integrating with the hub.
+    """
     provider = RateLimitProvider()
     provider.start() 

@@ -1,3 +1,23 @@
+"""
+Weather Provider Example
+
+This example demonstrates how to implement a provider that fetches weather data using the Arbvantage Provider Framework.
+It shows how to:
+1. Integrate with an external API (OpenWeatherMap)
+2. Register actions for current weather and forecast
+3. Handle API keys and error handling
+
+Environment variables required:
+- PROVIDER_NAME: Name of the provider (defaults to "weather")
+- PROVIDER_AUTH_TOKEN: Authentication token for the hub
+- HUB_GRPC_URL: URL of the hub service (defaults to "hub-grpc:50051")
+- TASK_EXECUTION_TIMEOUT: Timeout for task execution in seconds (defaults to 30)
+
+Why is this important?
+-----------------------------------
+This example shows how to work with external APIs, handle authentication, and process structured responses.
+"""
+
 from arbvantage_provider import Provider
 import os
 import requests
@@ -5,6 +25,18 @@ from typing import Dict, List
 from arbvantage_provider.schemas import ProviderResponse
 
 class WeatherProvider(Provider):
+    """
+    Provider for weather data using OpenWeatherMap API.
+    
+    This provider demonstrates:
+    - How to fetch data from an external API
+    - How to handle API keys and errors
+    - How to structure actions for current weather and forecast
+    
+    Why is this important?
+    -----------------------------------
+    Shows how to build real-world integrations and handle external dependencies.
+    """
     def __init__(self):
         super().__init__(
             name=os.getenv("PROVIDER_NAME", "weather"),
@@ -26,9 +58,20 @@ class WeatherProvider(Provider):
                 "api_key": str
             }
         )
-        def get_current_weather(payload: Dict, account: Dict) -> Dict:
+        def get_current_weather(payload: Dict, account: Dict) -> ProviderResponse:
             """
-            Get current weather data for a specified city
+            Get current weather data for a specified city.
+
+            Args:
+                payload (dict): Must contain 'city' and 'country_code'.
+                account (dict): Must contain 'api_key'.
+
+            Returns:
+                ProviderResponse: status 'success' and weather data, or 'error' on failure.
+
+            Why is this important?
+            -----------------------------------
+            Shows how to use account data (API keys) and handle API errors gracefully.
             """
             try:
                 api_key = account.get("api_key")
@@ -76,9 +119,20 @@ class WeatherProvider(Provider):
                 "api_key": str
             }
         )
-        def get_forecast(payload: Dict, account: Dict) -> Dict:
+        def get_forecast(payload: Dict, account: Dict) -> ProviderResponse:
             """
-            Get 5-day weather forecast for a specified city
+            Get 5-day weather forecast for a specified city.
+
+            Args:
+                payload (dict): Must contain 'city' and 'country_code'.
+                account (dict): Must contain 'api_key'.
+
+            Returns:
+                ProviderResponse: status 'success' and forecast data, or 'error' on failure.
+
+            Why is this important?
+            -----------------------------------
+            Shows how to process and structure multi-day forecast data from an API.
             """
             try:
                 api_key = account.get("api_key")
@@ -124,5 +178,12 @@ class WeatherProvider(Provider):
                 )
 
 if __name__ == "__main__":
+    """
+    Run the provider if this script is executed directly.
+    
+    Why is this important?
+    -----------------------------------
+    This allows you to test the provider standalone before integrating with the hub.
+    """
     provider = WeatherProvider()
     provider.start() 

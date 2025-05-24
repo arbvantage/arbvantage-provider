@@ -1,10 +1,24 @@
 syntax = "proto3";
 
+// ProviderRequest: Message sent by a provider to identify itself and authenticate with the Hub.
+// Fields:
+//   provider: The unique name of the provider.
+//   auth_token: The authentication token for the provider.
 message ProviderRequest {
     string provider = 1;
     string auth_token = 2;
 }
 
+// TaskResult: Message sent by a provider to submit the result of a processed task.
+// Fields:
+//   task_id: Unique identifier for the task.
+//   provider: Name of the provider submitting the result.
+//   auth_token: Authentication token for the provider.
+//   status: Status of the task execution (e.g., success, error).
+//   action: Name of the action that was executed.
+//   payload: The original payload of the task (as a string).
+//   result: The result of the action (as a string).
+//   account: Optional account information as a key-value map.
 message TaskResult {
     string task_id = 1;
     string provider = 2;
@@ -16,6 +30,12 @@ message TaskResult {
     map<string, string> account = 8;
 }
 
+// Task: Message representing a task assigned to a provider by the Hub.
+// Fields:
+//   task_id: Unique identifier for the task.
+//   action: Name of the action to execute.
+//   payload: The payload for the action (as bytes).
+//   account: Optional account information as a key-value map.
 message Task {
     string task_id = 1;
     string action = 2;
@@ -23,6 +43,10 @@ message Task {
     map<string, string> account = 4;
 }
 
+// Hub: gRPC service definition for communication between providers and the Hub.
+// Methods:
+//   GetTask: Provider requests a new task from the Hub.
+//   SubmitTaskResult: Provider submits the result of a processed task.
 service Hub {
     rpc GetTask(ProviderRequest) returns (Task) {}
     rpc SubmitTaskResult(TaskResult) returns (Task) {}

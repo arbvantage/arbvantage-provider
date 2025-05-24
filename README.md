@@ -27,6 +27,7 @@ A comprehensive Python framework for building providers that communicate with th
 - [Security Considerations](#security-considerations)
 - [Performance Optimization](#performance-optimization)
 - [Testing and Debugging](#testing-and-debugging)
+- [Writing Actions](#writing-actions)
 
 ## Overview
 
@@ -708,3 +709,71 @@ The `examples/facebook/` directory contains a complete example of Facebook integ
   - Graph API usage
   - Rate limiting
   - Error handling
+
+## Writing Actions
+
+You can write actions with any signature you want. The framework will automatically filter parameters
+and only pass those that your handler accepts. This gives you maximum flexibility and safety.
+
+### Example 1: Minimal action (no parameters)
+
+```python
+@self.actions.register(
+    name="ping",
+    description="Simple ping action"
+)
+def ping():
+    # This action does not require any parameters
+    return {"result": "pong"}
+```
+
+### Example 2: Action with explicit parameters
+
+```python
+@self.actions.register(
+    name="echo",
+    description="Echoes the payload",
+    payload_schema={"message": str}
+)
+def echo(payload, logger):
+    # 'payload' and 'logger' will be passed automatically
+    logger.info(f"Payload: {payload}")
+    return {"result": payload["message"]}
+```
+
+### Example 3: Action with **kwargs for extra flexibility
+
+```python
+@self.actions.register(
+    name="flexible_action",
+    description="Accepts any parameters"
+)
+def flexible_action(payload, **kwargs):
+    # 'payload' is required, all other parameters (logger, provider, account, etc.)
+    # will be available in kwargs if needed
+    logger = kwargs.get("logger")
+    if logger:
+        logger.info(f"Payload: {payload}")
+    return {"received": payload}
+```
+
+### Example 4: Action with only **kwargs
+
+```python
+@self.actions.register(
+    name="catch_all",
+    description="Catches all parameters"
+)
+def catch_all(**kwargs):
+    # All parameters (payload, account, provider, logger, etc.) will be in kwargs
+    return {"all_params": kwargs}
+```
+
+### How it works
+
+- The framework uses Python's inspect module to analyze your action's signature.
+- Only the parameters that your handler accepts will be passed.
+- If you use **kwargs, you can access any extra parameters you need.
+- This approach allows you to write both strict and flexible actions, depending on your needs.
+
+---

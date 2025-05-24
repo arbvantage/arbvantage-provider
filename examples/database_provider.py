@@ -1,12 +1,21 @@
 """
-Example of a provider with database support.
+Database Provider Example
 
-This example demonstrates how to implement database operations in a provider.
-It shows:
-- Database connection management
-- CRUD operations
-- Transaction handling
-- Error handling with database
+This example demonstrates how to implement a provider with database support using the Arbvantage Provider Framework.
+It shows how to:
+1. Use SQLAlchemy for database access
+2. Register actions for CRUD operations
+3. Handle transactions and error handling
+
+Environment variables required:
+- PROVIDER_NAME: Name of the provider (defaults to "database-provider")
+- PROVIDER_AUTH_TOKEN: Authentication token for the hub
+- HUB_GRPC_URL: URL of the hub service (defaults to "hub-grpc:50051")
+- DATABASE_URL: SQLAlchemy database URL (defaults to "sqlite:///example.db")
+
+Why is this important?
+-----------------------------------
+This example shows how to integrate persistent storage, manage transactions, and structure CRUD actions for real-world use cases.
 """
 
 import os
@@ -36,6 +45,10 @@ class DatabaseProvider(Provider):
     
     This provider demonstrates how to implement database operations.
     It uses SQLAlchemy for database access and provides CRUD operations.
+    
+    Why is this important?
+    -----------------------------------
+    Shows how to persist data, manage transactions, and structure actions for real-world business logic.
     """
     
     def __init__(self):
@@ -73,10 +86,12 @@ class DatabaseProvider(Provider):
             Create a new user in the database.
             
             Args:
-                payload: Dictionary containing user data
-                
+                payload (dict): Must contain 'name' and 'email'.
             Returns:
-                ProviderResponse with created user data
+                ProviderResponse: status 'success' and created user data, or 'error' on failure.
+            Why is this important?
+            -----------------------------------
+            Shows how to insert data and handle unique constraints and errors.
             """
             session = self.Session()
             try:
@@ -117,10 +132,12 @@ class DatabaseProvider(Provider):
             Get user by ID from the database.
             
             Args:
-                payload: Dictionary containing user ID
-                
+                payload (dict): Must contain 'user_id'.
             Returns:
-                ProviderResponse with user data
+                ProviderResponse: status 'success' and user data, or 'error' if not found.
+            Why is this important?
+            -----------------------------------
+            Shows how to retrieve data and handle missing records.
             """
             session = self.Session()
             try:
@@ -161,10 +178,12 @@ class DatabaseProvider(Provider):
             Update user data in the database.
             
             Args:
-                payload: Dictionary containing user ID and new data
-                
+                payload (dict): Must contain 'user_id', 'name', and 'email'.
             Returns:
-                ProviderResponse with updated user data
+                ProviderResponse: status 'success' and updated user data, or 'error' if not found.
+            Why is this important?
+            -----------------------------------
+            Shows how to update records and handle errors/rollbacks.
             """
             session = self.Session()
             try:
@@ -209,10 +228,12 @@ class DatabaseProvider(Provider):
             Delete user from the database.
             
             Args:
-                payload: Dictionary containing user ID
-                
+                payload (dict): Must contain 'user_id'.
             Returns:
-                ProviderResponse with deletion status
+                ProviderResponse: status 'success' or 'error' if not found.
+            Why is this important?
+            -----------------------------------
+            Shows how to delete records and handle errors/rollbacks.
             """
             session = self.Session()
             try:
@@ -250,29 +271,30 @@ class DatabaseProvider(Provider):
             List all users from the database.
             
             Args:
-                payload: Empty dictionary
-                
+                payload (dict): Not used for this action.
             Returns:
-                ProviderResponse with list of users
+                ProviderResponse: status 'success' and list of users.
+            Why is this important?
+            -----------------------------------
+            Shows how to return collections of records.
             """
             session = self.Session()
             try:
                 users = session.query(User).all()
+                data = [
+                    {
+                        "id": user.id,
+                        "name": user.name,
+                        "email": user.email,
+                        "created_at": user.created_at.isoformat(),
+                        "updated_at": user.updated_at.isoformat()
+                    }
+                    for user in users
+                ]
                 return ProviderResponse(
                     status="success",
-                    message="Users retrieved successfully",
-                    data={
-                        "users": [
-                            {
-                                "id": user.id,
-                                "name": user.name,
-                                "email": user.email,
-                                "created_at": user.created_at.isoformat(),
-                                "updated_at": user.updated_at.isoformat()
-                            }
-                            for user in users
-                        ]
-                    }
+                    message="Users listed successfully",
+                    data=data
                 )
             except Exception as e:
                 self.logger.error("Error listing users", error=str(e))
@@ -284,5 +306,12 @@ class DatabaseProvider(Provider):
                 session.close()
 
 if __name__ == "__main__":
+    """
+    Run the provider if this script is executed directly.
+    
+    Why is this important?
+    -----------------------------------
+    This allows you to test database actions and persistence before integrating with the hub.
+    """
     provider = DatabaseProvider()
     provider.start() 

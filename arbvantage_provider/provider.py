@@ -22,6 +22,8 @@ import signal
 import backoff
 from typing import Optional, Dict, Any
 from datetime import datetime
+from zoneinfo import ZoneInfo
+import inspect
 
 from .protos import hub_pb2, hub_pb2_grpc
 from .actions import ActionsRegistry
@@ -32,15 +34,19 @@ from .logger import ProviderLogger
 
 class Provider:
     """
-    Base class for creating providers that communicate with the Hub service.
+    Main class for building providers that communicate with the Hub service via gRPC.
     
-    This class implements the core provider functionality including:
-    - Connection management to the Hub
-    - Task processing pipeline
-    - Action execution
-    - Error handling
-    - Graceful shutdown
-    - Rate limiting
+    This class manages the full lifecycle of a provider:
+    - Establishes and maintains a connection to the Hub
+    - Receives and processes tasks from the Hub
+    - Executes registered actions with payload validation
+    - Handles errors and logs all important events
+    - Supports rate limiting and graceful shutdown
+    
+    Why is this important?
+    -----------------------------------
+    This class abstracts away the complexity of gRPC communication, error handling,
+    and task management, allowing you to focus on business logic and action implementation.
     
     Attributes:
         name (str): Unique identifier for the provider
@@ -58,6 +64,7 @@ class Provider:
         name: str,
         auth_token: str,
         hub_url: str,
+        timezone: str = "UTC",
         execution_timeout: int = 1,
         rate_limit_monitor: Optional[RateLimitMonitor] = None,
         log_file: Optional[str] = None,
@@ -65,6 +72,12 @@ class Provider:
     ):
         """
         Initialize the provider with required configuration.
+        
+        This constructor sets up all the core components of the provider, including:
+        - Logging (for debugging and monitoring)
+        - Action registry (for registering and looking up actions)
+        - Rate limit monitor (to prevent API abuse)
+        - Timezone handling (for correct time reporting)
         
         Args:
             name (str): Unique identifier for the provider
@@ -78,6 +91,7 @@ class Provider:
         self.name = name
         self.auth_token = auth_token
         self.hub_url = hub_url
+        self.timezone = timezone
         self.execution_timeout = execution_timeout
         self.running = True
         
@@ -92,6 +106,12 @@ class Provider:
         
         # Initialize rate limit monitor
         self.rate_limit_monitor = rate_limit_monitor or NoRateLimitMonitor()
+
+        # Initialize timezone
+        try:
+            self._tzinfo = ZoneInfo(timezone)
+        except Exception:
+            self._tzinfo = ZoneInfo("UTC")
 
     def _create_channel(self):
         """
@@ -121,30 +141,74 @@ class Provider:
             return channel
         return create()
 
-    def _handle_response(self, response: ProviderResponse) -> Dict[str, Any]:
+    def _handle_response(self, response: ProviderResponse, action: Optional[str] = None) -> Dict[str, Any]:
         """
         Helper method to convert ProviderResponse to dictionary and wrap data field with provider name.
         
+        This method ensures that all responses sent back to the Hub are consistently formatted and include
+        useful metadata such as provider name, action, timezone, and timestamps. This is important for debugging,
+        monitoring, and traceability in distributed systems.
+        
         Args:
             response (ProviderResponse): Response to convert
-            
+            action (Optional[str]): Name of the action (for metadata)
+        
         Returns:
             Dict[str, Any]: Converted response with data field wrapped with provider name
         """
         response_dict = response.model_dump()
         if "data" in response_dict:
-            response_dict["data"] = {self.name: response_dict["data"]}
+            now = datetime.now(self._tzinfo)
+            now_utc = datetime.now(ZoneInfo("UTC"))
+            data = {
+                "provider": self.name,
+                "action": action or "",
+                "timezone": str(self._tzinfo),
+                "now": now.isoformat(),
+                "now_utc": now_utc.isoformat(),
+                "result": response_dict["data"] or {}
+            }
+            response_dict["data"] = data
         return response_dict
+
+    def _filter_action_params(self, handler, params: dict) -> dict:
+        """
+        Filters the input parameters dictionary to only include those
+        that are accepted by the handler function.
+
+        This is useful when you have a generic set of parameters (e.g., payload, account, provider, logger, etc.)
+        but your action handler only needs a subset of them. By filtering, you avoid passing unexpected arguments
+        and make your action handlers more flexible and easier to maintain.
+
+        Args:
+            handler (Callable): The action handler function.
+            params (dict): The dictionary of all possible parameters.
+
+        Returns:
+            dict: A dictionary containing only the parameters accepted by the handler.
+        """
+        sig = inspect.signature(handler)
+        accepted_params = sig.parameters.keys()
+        # Only keep parameters that the handler actually accepts
+        return {k: v for k, v in params.items() if k in accepted_params}
 
     def process_task(self, action: str, payload: Dict, account: Optional[str] = None) -> Dict[str, Any]:
         """
         Process a single task by executing the specified action with given parameters.
         
+        This method is the main entry point for handling tasks received from the Hub. It performs:
+        - Rate limit checks (global and per-action)
+        - Action lookup and validation
+        - Parameter validation (payload and account)
+        - Action execution (with filtered parameters)
+        - Response validation and formatting
+        - Error handling and logging
+        
         Args:
             action (str): Name of the action to execute
             payload (Dict): Action parameters
             account (Optional[str]): Account identifier if applicable
-            
+        
         Returns:
             Dict[str, Any]: Processed task result with status and data
         """
@@ -218,8 +282,14 @@ class Provider:
             action_params = {
                 'payload': {},  # By default, we pass empty payload
                 'account': {},  # By default, we pass empty account
-                'provider_name': self.name,
-                'provider_token': self.auth_token,
+                'provider': {
+                    'name': self.name,
+                    'token': self.auth_token,
+                },
+                'logger': self.logger,
+                'timezone': self.timezone,
+                'now': datetime.now(self._tzinfo).isoformat(),
+                'now_utc': datetime.now(ZoneInfo("UTC")).isoformat(),
             }
 
             # Filter payload parameters only if schema exists
@@ -243,7 +313,11 @@ class Provider:
                 params=action_params
             )
             
-            result = action_def.handler(**action_params)
+            # Filter parameters before passing to the handler
+            # This ensures that only the parameters required by the handler are passed
+            # For example, if the handler only needs 'payload' and 'logger', it will not receive 'account', 'provider', etc.
+            filtered_params = self._filter_action_params(action_def.handler, action_params)
+            result = action_def.handler(**filtered_params)
             
             # Check if result is an instance of ProviderResponse
             if not isinstance(result, ProviderResponse):
@@ -285,6 +359,8 @@ class Provider:
         2. Establishes connection to the Hub
         3. Starts processing tasks in a loop
         4. Handles connection errors and retries
+        
+        This is the main loop of the provider. It will keep running until a shutdown signal is received.
         """
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
@@ -312,6 +388,9 @@ class Provider:
         """
         Handle shutdown signals for graceful termination.
         
+        This method allows the provider to shut down cleanly when receiving SIGINT or SIGTERM.
+        It sets the running flag to False, which will break the main loop.
+        
         Args:
             signum: Signal number
             frame: Current stack frame
@@ -327,6 +406,9 @@ class Provider:
         1. Polls for new tasks from the Hub
         2. Processes tasks and submits results
         3. Handles various error conditions
+        
+        This is the main worker loop for fetching and processing tasks. It ensures that each task is handled
+        robustly, with error handling and retries as needed.
         
         Args:
             stub: gRPC stub for Hub communication

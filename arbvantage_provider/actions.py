@@ -41,6 +41,11 @@ class Action:
     2. Response formatting
     3. Error handling
     4. Schema validation
+    
+    Why is this important?
+    -----------------------------------
+    Encapsulating action logic in a data class makes it easy to manage, validate,
+    and execute actions in a consistent way. This improves maintainability and testability.
     """
     description: str
     handler: Callable
@@ -128,12 +133,10 @@ class ActionsRegistry:
     4. Validate action parameters
     5. Configure rate limiting
     
-    The registry supports:
-    - Action registration with decorators
-    - Default rate limiting
-    - Action-specific rate limiting
-    - Custom rate limit monitors
-    - Schema validation
+    Why is this important?
+    -----------------------------------
+    Centralizing action management makes it easy to add, update, or remove actions.
+    It also enables features like schema validation and per-action rate limiting.
     """
     
     def __init__(self):
@@ -202,11 +205,9 @@ class ActionsRegistry:
         """
         Decorator for registering a new action.
         
-        This decorator:
-        1. Creates a new Action instance
-        2. Validates the schema
-        3. Sets up rate limiting
-        4. Registers the action
+        This decorator allows you to easily register a function as an action in the provider's action registry.
+        It attaches metadata such as description, payload schema, account schema, and rate limit monitor to the action.
+        This makes it easy to manage, document, and validate actions in a consistent way.
         
         Args:
             name (str): 
@@ -220,14 +221,17 @@ class ActionsRegistry:
             payload_schema (Dict[str, Type], optional): 
                 Dictionary defining the expected payload structure.
                 If None, an empty dict is used.
+                This helps with validation and documentation.
                 
             account_schema (Dict[str, Type], optional):
                 Dictionary defining the expected account structure.
                 If None, an empty dict is used.
+                This helps with validation and documentation.
                 
             rate_limit_monitor (Optional[RateLimitMonitor], optional):
                 Custom rate limit monitor for this action.
                 If None, the default rate limit monitor will be used.
+                This allows you to control rate limiting on a per-action basis.
                 
         Returns:
             Callable: A decorator function that registers the action handler.
@@ -258,18 +262,30 @@ class ActionsRegistry:
         Retrieve an action by its name.
         
         Args:
-            name (str): The name of the action to retrieve.
-            
+            name (str): The unique name of the action to retrieve.
+        
         Returns:
-            Action: The action instance if found, None otherwise.
+            Action: The Action object associated with the given name.
+        
+        Raises:
+            KeyError: If the action is not found in the registry.
         """
-        return self._actions.get(name)
+        return self._actions[name]
+
+    def get_actions(self) -> Dict[str, Action]:
+        """
+        Get a dictionary of all registered actions.
+        
+        Returns:
+            Dict[str, Action]: A dictionary mapping action names to Action objects.
+        """
+        return self._actions
 
     def get_all_actions(self) -> Dict[str, Action]:
         """
-        Get all registered actions.
+        Alias for get_actions(). Returns all registered actions.
         
         Returns:
-            Dict[str, Action]: Dictionary mapping action names to their instances.
+            Dict[str, Action]: A dictionary mapping action names to Action objects.
         """
-        return self._actions 
+        return self.get_actions() 
