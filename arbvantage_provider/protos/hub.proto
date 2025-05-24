@@ -27,7 +27,7 @@ message TaskResult {
     string action = 5;
     string payload = 6;
     string result = 7;
-    map<string, string> account = 8;
+    string account = 8;
 }
 
 // Task: Message representing a task assigned to a provider by the Hub.
@@ -40,7 +40,7 @@ message Task {
     string id = 1;
     string action = 2;
     bytes payload = 3;
-    map<string, string> account = 4;
+    bytes account = 4;
 }
 
 // Hub: gRPC service definition for communication between providers and the Hub.

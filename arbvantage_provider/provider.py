@@ -452,7 +452,7 @@ class Provider:
                         action=action,
                         status=status,
                         result=json.dumps(result),
-                        account=account
+                        account=json.dumps(account)
                     ))
                     
                     self.logger.info(
