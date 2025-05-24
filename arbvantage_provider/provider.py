@@ -476,15 +476,18 @@ class Provider:
                     continue
 
             except grpc.RpcError as e:
+                # Log gRPC error details in a safe way, even if some attributes are missing
+                error_details = getattr(e, "details", lambda: str(e))()
+                error_code = getattr(e, "code", lambda: "Unknown")()
                 self.logger.error(
                     "gRPC error",
-                    error=e.details(),
-                    code=e.code()
+                    error=error_details,
+                    code=str(error_code)
                 )
-                if e.code() == grpc.StatusCode.UNAUTHENTICATED:
+                if error_code == grpc.StatusCode.UNAUTHENTICATED:
                     self.logger.error("Provider authentication error")
                     return
-                if e.code() == grpc.StatusCode.NOT_FOUND:
+                if error_code == grpc.StatusCode.NOT_FOUND:
                     self.logger.info("Task not found, waiting for next one...")
                     time.sleep(self.execution_timeout)
                     continue
@@ -492,8 +495,8 @@ class Provider:
                     status="error",
                     message="gRPC error occurred",
                     data={
-                        "error": e.details(),
-                        "code": str(e.code())
+                        "error": error_details,
+                        "code": str(error_code)
                     }
                 ).model_dump()
                 if task.task_id:
