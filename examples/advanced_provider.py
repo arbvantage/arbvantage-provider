@@ -178,7 +178,7 @@ class AdvancedProvider(Provider):
                 "amount": float,
                 "currency": str,
                 "payment_method": str,
-                "retry_count": int = 3
+                "retry_count": int
             },
             rate_limit_monitor=AdvancedRateLimitMonitor(
                 requests_per_minute=60,
@@ -215,6 +215,50 @@ class AdvancedProvider(Provider):
                             data={"error": str(e), "retry_count": retry_count}
                         )
                     time.sleep(2 ** retry_count)  # Exponential backoff
+        
+        # Example 4: Deeply nested account schema
+        @self.actions.register(
+            name="deep_account_validation",
+            description="Demonstrate deep validation of nested account schema",
+            payload_schema={
+                "operation": str
+            },
+            account_schema={
+                "name": str,
+                "settings": {
+                    "api_key": str,
+                    "advanced": {
+                        "retry_count": int,
+                        "proxy": {
+                            "host": str,
+                            "port": int
+                        }
+                    }
+                }
+            }
+        )
+        def deep_account_validation(payload: Dict[str, Any], account: Dict[str, Any]) -> ProviderResponse:
+            """
+            Demonstrate deep validation of nested account schema.
+
+            Args:
+                payload (dict): Must contain 'operation'.
+                account (dict): Must contain 'name', 'settings' (with nested advanced and proxy).
+
+            Returns:
+                ProviderResponse: status 'success' and the validated account data.
+
+            Why is this important?
+            -----------------------------------
+            Shows how the framework validates deeply nested account schemas and provides detailed error messages.
+            """
+            return ProviderResponse(
+                status="success",
+                data={
+                    "operation": payload["operation"],
+                    "account": account
+                }
+            )
     
     @lru_cache(maxsize=100)
     def _get_cached_forecast(self, cache_key: str) -> Optional[Dict[str, Any]]:

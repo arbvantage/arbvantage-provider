@@ -199,6 +199,67 @@ class Provider:
         # Only keep parameters that the handler actually accepts
         return {k: v for k, v in params.items() if k in accepted_params}
 
+    def _validate_schema(self, data: dict, schema: dict, path: str = "") -> list:
+        """
+        Recursively validate that data matches the schema, including nested dictionaries and lists.
+        
+        This method performs deep validation of nested dictionaries and lists against a schema definition.
+        It checks both the presence of required keys and their types, including nested structures.
+        
+        Args:
+            data (dict): Actual data to validate
+            schema (dict): Schema definition with expected types or nested dict/list
+            path (str): Current path in the data structure for error reporting
+        
+        Returns:
+            list: List of validation errors (empty if all valid)
+        
+        Example:
+            schema = {
+                "name": str,
+                "settings": {
+                    "api_key": str,
+                    "timeout": int
+                }
+            }
+            errors = provider._validate_schema(data, schema)
+        """
+        errors = []
+        for key, value_type in schema.items():
+            current_path = f"{path}.{key}" if path else key
+            if key not in data:
+                errors.append(f"Missing key: {current_path}")
+                continue
+            if isinstance(value_type, dict):
+                # Recursively validate nested dict
+                if not isinstance(data[key], dict):
+                    errors.append(f"Key {current_path} should be a dict, got {type(data[key]).__name__}")
+                else:
+                    errors.extend(self._validate_schema(data[key], value_type, current_path))
+            elif isinstance(value_type, list):
+                # Validate list of items with a schema
+                if not isinstance(data[key], list):
+                    errors.append(f"Key {current_path} should be a list, got {type(data[key]).__name__}")
+                else:
+                    if len(value_type) != 1:
+                        errors.append(f"Schema for list {current_path} should have exactly one type definition")
+                    else:
+                        item_schema = value_type[0]
+                        for idx, item in enumerate(data[key]):
+                            item_path = f"{current_path}[{idx}]"
+                            if isinstance(item_schema, dict):
+                                if not isinstance(item, dict):
+                                    errors.append(f"Item {item_path} should be a dict, got {type(item).__name__}")
+                                else:
+                                    errors.extend(self._validate_schema(item, item_schema, item_path))
+                            else:
+                                if not isinstance(item, item_schema):
+                                    errors.append(f"Item {item_path} should be {item_schema.__name__}, got {type(item).__name__}")
+            else:
+                if not isinstance(data[key], value_type):
+                    errors.append(f"Key {current_path} should be {value_type.__name__}, got {type(data[key]).__name__}")
+        return errors
+
     def process_task(self, action: str, payload: Dict, account: Optional[str] = None) -> Dict[str, Any]:
         """
         Process a single task by executing the specified action with given parameters.
@@ -260,31 +321,50 @@ class Provider:
 
             # Validate required parameters for payload if schema exists
             if hasattr(action_def, 'payload_schema') and action_def.payload_schema:
-                missing_params = [
-                    param for param in action_def.payload_schema.keys()
-                    if param not in payload
-                ]
-                if missing_params:
+                validation_errors = self._validate_schema(payload, action_def.payload_schema)
+                if validation_errors:
                     self.logger.warning(
-                        "Missing required parameters",
+                        "Payload validation failed",
                         action=action,
-                        missing_params=missing_params
+                        errors=validation_errors
                     )
-                    return self._handle_response(ProviderResponse(status="error", message=f"Missing required parameters: {', '.join(missing_params)}"), action=action)
-            
+                    return self._handle_response(
+                        ProviderResponse(
+                            status="error",
+                            message="Payload validation failed",
+                            data={"errors": validation_errors}
+                        ),
+                        action=action
+                    )
             # Validate required parameters for account if schema exists
             if hasattr(action_def, 'account_schema') and action_def.account_schema:
-                missing_account_params = [
-                    param for param in action_def.account_schema.keys()
-                    if not account or param not in account
-                ]
-                if missing_account_params:
+                if not account:
                     self.logger.warning(
-                        "Missing required account parameters",
-                        action=action,
-                        missing_params=missing_account_params
+                        "Account data is required but not provided",
+                        action=action
                     )
-                    return self._handle_response(ProviderResponse(status="error", message=f"Missing required account parameters: {', '.join(missing_account_params)}"), action=action)
+                    return self._handle_response(
+                        ProviderResponse(
+                            status="error",
+                            message="Account data is required but not provided"
+                        ),
+                        action=action
+                    )
+                validation_errors = self._validate_schema(account, action_def.account_schema)
+                if validation_errors:
+                    self.logger.warning(
+                        "Account validation failed",
+                        action=action,
+                        errors=validation_errors
+                    )
+                    return self._handle_response(
+                        ProviderResponse(
+                            status="error",
+                            message="Account validation failed",
+                            data={"errors": validation_errors}
+                        ),
+                        action=action
+                    )
             
             action_params = {
                 'payload': {},  # By default, we pass empty payload

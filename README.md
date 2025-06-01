@@ -28,6 +28,7 @@ A comprehensive Python framework for building providers that communicate with th
 - [Performance Optimization](#performance-optimization)
 - [Testing and Debugging](#testing-and-debugging)
 - [Writing Actions](#writing-actions)
+- [Nested Schema Validation](#nested-schema-validation)
 
 ## Overview
 
@@ -775,5 +776,68 @@ def catch_all(**kwargs):
 - Only the parameters that your handler accepts will be passed.
 - If you use **kwargs, you can access any extra parameters you need.
 - This approach allows you to write both strict and flexible actions, depending on your needs.
+
+## Nested Schema Validation
+
+The framework now supports deep (recursive) validation of nested dictionaries and lists in both `payload_schema` and `account_schema`. This means you can define complex, deeply nested structures for your action schemas, and the framework will automatically validate incoming data against these schemas.
+
+### Example: Nested Payload Schema
+
+```python
+@self.actions.register(
+    name="create_user_profile",
+    description="Create a user profile with nested settings and preferences",
+    payload_schema={
+        "username": str,
+        "profile": {
+            "first_name": str,
+            "last_name": str,
+            "settings": {
+                "theme": str,
+                "notifications": {
+                    "email": bool,
+                    "sms": bool
+                }
+            }
+        },
+        "tags": [str]  # List of strings
+    },
+    account_schema={
+        "api_key": str,
+        "permissions": {
+            "admin": bool,
+            "scopes": [str]
+        }
+    }
+)
+def create_user_profile(payload: dict, account: dict):
+    # Implementation
+    return {"status": "success"}
+```
+
+### How Validation Works
+- **Missing keys**: If any required key (even deeply nested) is missing, a detailed error will be returned with the full path to the missing key.
+- **Type mismatches**: If a value does not match the expected type (including inside lists or nested dicts), a detailed error will be returned.
+- **Lists**: You can specify lists of types or lists of dicts, and each item will be validated.
+
+### Example Error Output
+If the payload is missing `profile.settings.notifications.sms`, the error will look like:
+
+```json
+{
+  "status": "error",
+  "message": "Payload validation failed",
+  "data": {
+    "errors": [
+      "Missing key: profile.settings.notifications.sms"
+    ]
+  }
+}
+```
+
+### Best Practices
+- Always define your schemas as deeply as your business logic requires.
+- Use lists and nested dicts to express complex data structures.
+- The validation system will help you catch errors early and provide clear feedback to API users.
 
 ---

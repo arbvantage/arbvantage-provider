@@ -149,6 +149,58 @@ class BasicProvider(Provider):
                 data={"message": f"{greeting}, {name}!"}
             )
 
+        # Register an action with nested payload and account schema
+        @self.actions.register(
+            name="create_profile",
+            description="Create a user profile with nested settings and preferences",
+            payload_schema={
+                "username": str,
+                "profile": {
+                    "first_name": str,
+                    "last_name": str,
+                    "settings": {
+                        "theme": str,
+                        "notifications": {
+                            "email": bool,
+                            "sms": bool
+                        }
+                    }
+                },
+                "tags": [str]  # List of strings
+            },
+            account_schema={
+                "api_key": str,
+                "permissions": {
+                    "admin": bool,
+                    "scopes": [str]
+                }
+            }
+        )
+        def create_profile(payload: Dict[str, Any], account: Dict[str, Any]) -> ProviderResponse:
+            """
+            Create a user profile with nested settings and preferences.
+
+            Args:
+                payload (dict): Must contain 'username', 'profile' (with nested settings), and 'tags'.
+                account (dict): Must contain 'api_key' and 'permissions' (with nested scopes).
+
+            Returns:
+                ProviderResponse: status 'success' and the created profile data.
+
+            Why is this important?
+            -----------------------------------
+            Demonstrates how to use and validate deeply nested schemas for both payload and account.
+            """
+            return ProviderResponse(
+                status="success",
+                data={
+                    "username": payload["username"],
+                    "profile": payload["profile"],
+                    "tags": payload["tags"],
+                    "permissions": account["permissions"]
+                }
+            )
+
 if __name__ == "__main__":
     """
     Run the provider if this script is executed directly.
