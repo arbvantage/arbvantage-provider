@@ -1,247 +1,82 @@
 """
-Example of a provider with external API support.
+External API Provider Example
 
-This example demonstrates how to implement external API integration in a provider.
-It shows:
-- API authentication
-- Rate limiting
-- Error handling
-- Response caching
-- Retry logic
+This example demonstrates how to implement a provider that interacts with an external API using the Arbvantage Provider Framework and explicit Pydantic schemas.
+It shows how to:
+1. Integrate with a third-party API (e.g., GitHub)
+2. Register actions for API calls
+3. Handle API keys and error handling
+
+Environment variables required:
+- PROVIDER_NAME: Name of the provider (defaults to "external-api-provider")
+- PROVIDER_AUTH_TOKEN: Authentication token for the hub
+- HUB_GRPC_URL: URL of the hub service (defaults to "hub-grpc:50051")
+- GITHUB_TOKEN: GitHub API token
+
+Why is this important?
+----------------------
+This example shows how to safely and cleanly wrap external APIs with strict validation and error handling.
 """
 
-import os
-import time
 from typing import Dict, Any, Optional
-import requests
-from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
+from pydantic import BaseModel, Field
 from arbvantage_provider import Provider, ProviderResponse
-from arbvantage_provider.rate_limit import TimeBasedRateLimitMonitor
+import requests
+import os
+
+# --- Pydantic Schemas ---
+class RepoInfoPayload(BaseModel):
+    owner: str = Field(..., description="GitHub repository owner")
+    repo: str = Field(..., description="GitHub repository name")
+
+class SearchReposPayload(BaseModel):
+    query: str = Field(..., description="Search query for repositories")
+    per_page: Optional[int] = Field(10, description="Results per page")
+
+class GitHubAccount(BaseModel):
+    token: str = Field(..., description="GitHub API token")
 
 class ExternalAPIProvider(Provider):
     """
-    Provider with external API support.
-    
-    This provider demonstrates how to implement external API integration.
-    It uses requests library with retry logic and rate limiting.
+    Example provider for interacting with the GitHub API using explicit Pydantic schemas.
     """
-    
     def __init__(self):
         super().__init__(
-            name="external-api-provider",
-            auth_token=os.getenv("PROVIDER_AUTH_TOKEN"),
+            name=os.getenv("PROVIDER_NAME", "external-api-provider"),
+            auth_token=os.getenv("PROVIDER_AUTH_TOKEN", "your-auth-token"),
             hub_url=os.getenv("HUB_GRPC_URL", "hub-grpc:50051")
         )
-        
-        # Initialize rate limit monitor
-        self.rate_limit_monitor = TimeBasedRateLimitMonitor(min_delay=1.0)
-        
-        # Initialize requests session with retry logic
-        self.session = self._create_session()
-        
-        # Register API actions
-        self._register_api_actions()
-        
-    def _create_session(self) -> requests.Session:
-        """
-        Create requests session with retry logic.
-        
-        Returns:
-            Configured requests session
-        """
-        session = requests.Session()
-        
-        # Configure retry strategy
-        retry_strategy = Retry(
-            total=3,  # number of retries
-            backoff_factor=1,  # wait 1, 2, 4 seconds between retries
-            status_forcelist=[429, 500, 502, 503, 504]  # HTTP status codes to retry on
-        )
-        
-        # Mount retry strategy to session
-        adapter = HTTPAdapter(max_retries=retry_strategy)
-        session.mount("http://", adapter)
-        session.mount("https://", adapter)
-        
-        return session
-        
-    def _register_api_actions(self):
-        """Register API actions."""
-        
+        self._register_actions()
+
+    def _register_actions(self):
         @self.actions.register(
-            name="get_weather",
-            description="Get weather data from external API",
-            payload_schema={"city": str}
+            name="get_repo_info",
+            description="Get information about a GitHub repository",
+            payload_schema=RepoInfoPayload,
+            account_schema=GitHubAccount
         )
-        def get_weather(payload: Dict[str, Any]) -> ProviderResponse:
-            """
-            Get weather data from external API.
-            
-            Args:
-                payload: Dictionary containing city name
-                
-            Returns:
-                ProviderResponse with weather data
-            """
-            try:
-                city = payload["city"]
-                
-                # Check rate limits
-                limits = self.rate_limit_monitor.check_rate_limits()
-                if limits and limits.get("rate_limited"):
-                    time.sleep(limits["wait_time"])
-                    
-                # Make API request
-                response = self.session.get(
-                    f"https://api.weatherapi.com/v1/current.json",
-                    params={
-                        "key": os.getenv("WEATHER_API_KEY"),
-                        "q": city
-                    },
-                    timeout=10
-                )
-                
-                # Check response status
-                if response.status_code == 200:
-                    data = response.json()
-                    return ProviderResponse(
-                        status="success",
-                        message=f"Weather data retrieved for {city}",
-                        data=data
-                    )
-                else:
-                    return ProviderResponse(
-                        status="error",
-                        message=f"API request failed with status {response.status_code}",
-                        data={"status_code": response.status_code}
-                    )
-                    
-            except Exception as e:
-                self.logger.error("Error getting weather data", error=str(e))
-                return ProviderResponse(
-                    status="error",
-                    message=f"Failed to get weather data: {str(e)}"
-                )
-                
+        def get_repo_info(payload: RepoInfoPayload, account: GitHubAccount) -> ProviderResponse:
+            headers = {"Authorization": f"token {account.token}"}
+            url = f"https://api.github.com/repos/{payload.owner}/{payload.repo}"
+            response = requests.get(url, headers=headers)
+            if response.status_code == 200:
+                return ProviderResponse(status="success", data=response.json())
+            return ProviderResponse(status="error", message=response.text)
+
         @self.actions.register(
-            name="get_stock_price",
-            description="Get stock price from external API",
-            payload_schema={"symbol": str}
+            name="search_repos",
+            description="Search for GitHub repositories",
+            payload_schema=SearchReposPayload,
+            account_schema=GitHubAccount
         )
-        def get_stock_price(payload: Dict[str, Any]) -> ProviderResponse:
-            """
-            Get stock price from external API.
-            
-            Args:
-                payload: Dictionary containing stock symbol
-                
-            Returns:
-                ProviderResponse with stock price data
-            """
-            try:
-                symbol = payload["symbol"]
-                
-                # Check rate limits
-                limits = self.rate_limit_monitor.check_rate_limits()
-                if limits and limits.get("rate_limited"):
-                    time.sleep(limits["wait_time"])
-                    
-                # Make API request
-                response = self.session.get(
-                    f"https://api.stockdata.org/v1/data/quote",
-                    params={
-                        "api_token": os.getenv("STOCK_API_KEY"),
-                        "symbols": symbol
-                    },
-                    timeout=10
-                )
-                
-                # Check response status
-                if response.status_code == 200:
-                    data = response.json()
-                    return ProviderResponse(
-                        status="success",
-                        message=f"Stock price retrieved for {symbol}",
-                        data=data
-                    )
-                else:
-                    return ProviderResponse(
-                        status="error",
-                        message=f"API request failed with status {response.status_code}",
-                        data={"status_code": response.status_code}
-                    )
-                    
-            except Exception as e:
-                self.logger.error("Error getting stock price", error=str(e))
-                return ProviderResponse(
-                    status="error",
-                    message=f"Failed to get stock price: {str(e)}"
-                )
-                
-        @self.actions.register(
-            name="get_currency_rate",
-            description="Get currency exchange rate from external API",
-            payload_schema={"from_currency": str, "to_currency": str}
-        )
-        def get_currency_rate(payload: Dict[str, Any]) -> ProviderResponse:
-            """
-            Get currency exchange rate from external API.
-            
-            Args:
-                payload: Dictionary containing currency codes
-                
-            Returns:
-                ProviderResponse with exchange rate data
-            """
-            try:
-                from_currency = payload["from_currency"]
-                to_currency = payload["to_currency"]
-                
-                # Check rate limits
-                limits = self.rate_limit_monitor.check_rate_limits()
-                if limits and limits.get("rate_limited"):
-                    time.sleep(limits["wait_time"])
-                    
-                # Make API request
-                response = self.session.get(
-                    f"https://api.exchangerate-api.com/v4/latest/{from_currency}",
-                    timeout=10
-                )
-                
-                # Check response status
-                if response.status_code == 200:
-                    data = response.json()
-                    rate = data["rates"].get(to_currency)
-                    if rate:
-                        return ProviderResponse(
-                            status="success",
-                            message=f"Exchange rate retrieved for {from_currency}/{to_currency}",
-                            data={
-                                "from_currency": from_currency,
-                                "to_currency": to_currency,
-                                "rate": rate
-                            }
-                        )
-                    else:
-                        return ProviderResponse(
-                            status="error",
-                            message=f"Currency {to_currency} not found",
-                            data={"to_currency": to_currency}
-                        )
-                else:
-                    return ProviderResponse(
-                        status="error",
-                        message=f"API request failed with status {response.status_code}",
-                        data={"status_code": response.status_code}
-                    )
-                    
-            except Exception as e:
-                self.logger.error("Error getting currency rate", error=str(e))
-                return ProviderResponse(
-                    status="error",
-                    message=f"Failed to get currency rate: {str(e)}"
-                )
+        def search_repos(payload: SearchReposPayload, account: GitHubAccount) -> ProviderResponse:
+            headers = {"Authorization": f"token {account.token}"}
+            url = f"https://api.github.com/search/repositories"
+            params = {"q": payload.query, "per_page": payload.per_page}
+            response = requests.get(url, headers=headers, params=params)
+            if response.status_code == 200:
+                return ProviderResponse(status="success", data=response.json())
+            return ProviderResponse(status="error", message=response.text)
 
 if __name__ == "__main__":
     provider = ExternalAPIProvider()

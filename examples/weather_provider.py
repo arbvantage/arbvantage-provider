@@ -1,7 +1,7 @@
 """
 Weather Provider Example
 
-This example demonstrates how to implement a provider that fetches weather data using the Arbvantage Provider Framework.
+This example demonstrates how to implement a provider that fetches weather data using the Arbvantage Provider Framework and explicit Pydantic schemas.
 It shows how to:
 1. Integrate with an external API (OpenWeatherMap)
 2. Register actions for current weather and forecast
@@ -18,24 +18,23 @@ Why is this important?
 This example shows how to work with external APIs, handle authentication, and process structured responses.
 """
 
-from arbvantage_provider import Provider
 import os
 import requests
-from typing import Dict, List
-from arbvantage_provider.schemas import ProviderResponse
+from typing import Optional
+from pydantic import BaseModel, Field
+from arbvantage_provider import Provider, ProviderResponse
+
+# --- Pydantic Schemas ---
+class WeatherPayload(BaseModel):
+    city: str = Field(..., min_length=1, description="City name")
+    country_code: str = Field(..., min_length=2, max_length=2, description="Country code (ISO 3166-1 alpha-2)")
+
+class WeatherAccount(BaseModel):
+    api_key: str = Field(..., min_length=10, description="API key for OpenWeatherMap")
 
 class WeatherProvider(Provider):
     """
-    Provider for weather data using OpenWeatherMap API.
-    
-    This provider demonstrates:
-    - How to fetch data from an external API
-    - How to handle API keys and errors
-    - How to structure actions for current weather and forecast
-    
-    Why is this important?
-    -----------------------------------
-    Shows how to build real-world integrations and handle external dependencies.
+    Provider for weather data using OpenWeatherMap API and explicit Pydantic schemas.
     """
     def __init__(self):
         super().__init__(
@@ -44,50 +43,37 @@ class WeatherProvider(Provider):
             hub_url=os.getenv("HUB_GRPC_URL", "hub-grpc:50051"),
             execution_timeout=int(os.getenv("TASK_EXECUTION_TIMEOUT", 30))
         )
-        
         self.base_url = "http://api.openweathermap.org/data/2.5"
-        
+        self._register_weather_actions()
+
+    def _register_weather_actions(self):
         @self.actions.register(
             name="get_current_weather",
             description="Get current weather for a specific city",
-            payload_schema={
-                "city": str,
-                "country_code": str
-            },
-            account_schema={
-                "api_key": str
-            }
+            payload_schema=WeatherPayload,
+            account_schema=WeatherAccount
         )
-        def get_current_weather(payload: Dict, account: Dict) -> ProviderResponse:
+        def get_current_weather(payload: WeatherPayload, account: WeatherAccount) -> ProviderResponse:
             """
             Get current weather data for a specified city.
-
             Args:
-                payload (dict): Must contain 'city' and 'country_code'.
-                account (dict): Must contain 'api_key'.
-
+                payload (WeatherPayload): Validated payload with 'city' and 'country_code'.
+                account (WeatherAccount): Validated account with 'api_key'.
             Returns:
                 ProviderResponse: status 'success' and weather data, or 'error' on failure.
-
-            Why is this important?
-            -----------------------------------
-            Shows how to use account data (API keys) and handle API errors gracefully.
             """
             try:
-                api_key = account.get("api_key")
-                city = payload.get("city")
-                country_code = payload.get("country_code")
-                
+                api_key = account.api_key
+                city = payload.city
+                country_code = payload.country_code
                 url = f"{self.base_url}/weather"
                 params = {
                     "q": f"{city},{country_code}",
                     "appid": api_key,
                     "units": "metric"
                 }
-                
                 response = requests.get(url, params=params)
                 response.raise_for_status()
-                
                 data = response.json()
                 return ProviderResponse(
                     status="success",
@@ -101,7 +87,6 @@ class WeatherProvider(Provider):
                         "country": data["sys"]["country"]
                     }
                 )
-                
             except requests.exceptions.RequestException as e:
                 return ProviderResponse(
                     status="error",
@@ -111,47 +96,32 @@ class WeatherProvider(Provider):
         @self.actions.register(
             name="get_forecast",
             description="Get 5-day weather forecast for a specific city",
-            payload_schema={
-                "city": str,
-                "country_code": str
-            },
-            account_schema={
-                "api_key": str
-            }
+            payload_schema=WeatherPayload,
+            account_schema=WeatherAccount
         )
-        def get_forecast(payload: Dict, account: Dict) -> ProviderResponse:
+        def get_forecast(payload: WeatherPayload, account: WeatherAccount) -> ProviderResponse:
             """
             Get 5-day weather forecast for a specified city.
-
             Args:
-                payload (dict): Must contain 'city' and 'country_code'.
-                account (dict): Must contain 'api_key'.
-
+                payload (WeatherPayload): Validated payload with 'city' and 'country_code'.
+                account (WeatherAccount): Validated account with 'api_key'.
             Returns:
                 ProviderResponse: status 'success' and forecast data, or 'error' on failure.
-
-            Why is this important?
-            -----------------------------------
-            Shows how to process and structure multi-day forecast data from an API.
             """
             try:
-                api_key = account.get("api_key")
-                city = payload.get("city")
-                country_code = payload.get("country_code")
-                
+                api_key = account.api_key
+                city = payload.city
+                country_code = payload.country_code
                 url = f"{self.base_url}/forecast"
                 params = {
                     "q": f"{city},{country_code}",
                     "appid": api_key,
                     "units": "metric"
                 }
-                
                 response = requests.get(url, params=params)
                 response.raise_for_status()
-                
                 data = response.json()
                 forecasts = []
-                
                 current_date = None
                 for item in data["list"]:
                     date = item["dt_txt"].split()[0]
@@ -165,12 +135,10 @@ class WeatherProvider(Provider):
                             "wind_speed": item["wind"]["speed"],
                             "description": item["weather"][0]["description"]
                         })
-                
                 return ProviderResponse(
                     status="success",
                     data=forecasts[:5]
                 )
-                
             except requests.exceptions.RequestException as e:
                 return ProviderResponse(
                     status="error",

@@ -56,4 +56,18 @@ class ProviderResponse(BaseModel):
     # Human readable result message, required and must be at least 1 character.
     message: str = Field(..., min_length=1, description="Human readable result message")
     # Optional additional result data as a dictionary.
-    data: Optional[dict[str, Any]] = Field(default=None, description="Additional result data") 
+    data: Optional[dict[str, Any]] = Field(default=None, description="Additional result data")
+
+class BasePayload(BaseModel):
+    """
+    Base model for all action payloads.
+    This provides common validation and serialization for all payloads.
+    """
+    pass
+
+class BaseAccount(BaseModel):
+    """
+    Base model for all account data.
+    This provides common validation and serialization for all account data.
+    """
+    pass 

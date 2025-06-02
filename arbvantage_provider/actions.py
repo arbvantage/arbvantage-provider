@@ -21,7 +21,8 @@ from typing import TypeVar, Callable, Dict, Any, Type, Optional
 from dataclasses import dataclass
 from functools import wraps
 from .rate_limit import RateLimitMonitor, TimeBasedRateLimitMonitor, NoRateLimitMonitor
-from .schemas import ProviderResponse
+from .schemas import ProviderResponse, BasePayload, BaseAccount
+from .exceptions import InvalidPayloadError
 
 T = TypeVar('T')
 
@@ -49,11 +50,27 @@ class Action:
     """
     description: str
     handler: Callable
-    payload_schema: Dict[str, Type]
-    account_schema: Dict[str, Type]
+    payload_schema: Optional[Type[BasePayload]] = None
+    account_schema: Optional[Type[BaseAccount]] = None
     rate_limit_monitor: Optional[RateLimitMonitor] = None
 
-    def _handle_response(self, response: ProviderResponse) -> Dict[str, Any]:
+    def validate_payload(self, payload: dict) -> BasePayload:
+        if not self.payload_schema:
+            return payload
+        try:
+            return self.payload_schema(**payload)
+        except Exception as e:
+            raise InvalidPayloadError(str(e))
+
+    def validate_account(self, account: dict) -> BaseAccount:
+        if not self.account_schema:
+            return account
+        try:
+            return self.account_schema(**account)
+        except Exception as e:
+            raise InvalidPayloadError(str(e))
+
+    def _handle_response(self, response: ProviderResponse) -> dict:
         """
         Helper method to convert ProviderResponse to dictionary.
         
@@ -199,8 +216,8 @@ class ActionsRegistry:
     def register(self, 
                 name: str, 
                 description: str, 
-                payload_schema: Dict[str, Type] = None, 
-                account_schema: Dict[str, Type] = None,
+                payload_schema: Optional[Type[BasePayload]] = None, 
+                account_schema: Optional[Type[BaseAccount]] = None,
                 rate_limit_monitor: Optional[RateLimitMonitor] = None):
         """
         Decorator for registering a new action.
@@ -246,12 +263,12 @@ class ActionsRegistry:
             def my_action(param: str) -> dict:
                 return {"result": "success"}
         """
-        def wrapper(handler: Callable[..., T]) -> Callable[..., T]:
+        def wrapper(handler: Callable[..., Any]) -> Callable[..., Any]:
             self._actions[name] = Action(
                 description=description,
                 handler=handler,
-                payload_schema=payload_schema or {},
-                account_schema=account_schema or {},
+                payload_schema=payload_schema,
+                account_schema=account_schema,
                 rate_limit_monitor=rate_limit_monitor or self._default_rate_limit_monitor
             )
             return handler

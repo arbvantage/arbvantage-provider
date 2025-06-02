@@ -1,216 +1,96 @@
 """
-Example of a provider with message queue support.
+Message Queue Provider Example
 
-This example demonstrates how to implement message queue operations in a provider.
-It shows:
-- Message queue connection management
-- Publishing messages
-- Consuming messages
-- Error handling with queues
+This example demonstrates how to implement a provider that interacts with a message queue using the Arbvantage Provider Framework and explicit Pydantic schemas.
+It shows how to:
+1. Connect to a message queue (e.g., RabbitMQ)
+2. Register actions for publishing and consuming messages
+3. Handle connection and error handling
+
+Environment variables required:
+- PROVIDER_NAME: Name of the provider (defaults to "message-queue-provider")
+- PROVIDER_AUTH_TOKEN: Authentication token for the hub
+- HUB_GRPC_URL: URL of the hub service (defaults to "hub-grpc:50051")
+- MQ_URL: Message queue connection URL
+
+Why is this important?
+----------------------
+This example shows how to safely and cleanly wrap message queue operations with strict validation and error handling.
 """
 
-import os
-import json
-import pika
-from typing import Dict, Any, Optional
-from threading import Thread
-from queue import Queue
+from typing import Optional
+from pydantic import BaseModel, Field
 from arbvantage_provider import Provider, ProviderResponse
+import os
+import pika
+
+# --- Pydantic Schemas ---
+class PublishMessagePayload(BaseModel):
+    queue: str = Field(..., description="Queue name to publish to")
+    message: str = Field(..., description="Message body")
+
+class ConsumeMessagePayload(BaseModel):
+    queue: str = Field(..., description="Queue name to consume from")
+    auto_ack: Optional[bool] = Field(True, description="Auto-acknowledge messages")
+
+class MQAccount(BaseModel):
+    url: str = Field(..., description="Message queue connection URL")
 
 class MessageQueueProvider(Provider):
     """
-    Provider with message queue support.
-    
-    This provider demonstrates how to implement message queue operations.
-    It uses RabbitMQ for message queuing and provides pub/sub functionality.
+    Example provider for interacting with a message queue using explicit Pydantic schemas.
     """
-    
     def __init__(self):
         super().__init__(
-            name="message-queue-provider",
-            auth_token=os.getenv("PROVIDER_AUTH_TOKEN"),
+            name=os.getenv("PROVIDER_NAME", "message-queue-provider"),
+            auth_token=os.getenv("PROVIDER_AUTH_TOKEN", "your-auth-token"),
             hub_url=os.getenv("HUB_GRPC_URL", "hub-grpc:50051")
         )
-        
-        # Initialize message queue connection
-        self.connection = None
-        self.channel = None
-        self.message_queue = Queue()
-        
-        # Initialize RabbitMQ connection
-        self._init_rabbitmq()
-        
-        # Start message consumer thread
-        self.consumer_thread = Thread(target=self._consume_messages, daemon=True)
-        self.consumer_thread.start()
-        
-        # Register message queue actions
-        self._register_queue_actions()
-        
-    def _init_rabbitmq(self):
-        """Initialize RabbitMQ connection."""
-        try:
-            # Get RabbitMQ connection parameters
-            host = os.getenv("RABBITMQ_HOST", "localhost")
-            port = int(os.getenv("RABBITMQ_PORT", 5672))
-            username = os.getenv("RABBITMQ_USERNAME", "guest")
-            password = os.getenv("RABBITMQ_PASSWORD", "guest")
-            
-            # Create connection
-            credentials = pika.PlainCredentials(username, password)
-            parameters = pika.ConnectionParameters(
-                host=host,
-                port=port,
-                credentials=credentials
-            )
-            self.connection = pika.BlockingConnection(parameters)
-            self.channel = self.connection.channel()
-            
-            # Declare exchange and queue
-            self.channel.exchange_declare(
-                exchange="arbvantage",
-                exchange_type="topic"
-            )
-            self.channel.queue_declare(queue="arbvantage_queue")
-            self.channel.queue_bind(
-                exchange="arbvantage",
-                queue="arbvantage_queue",
-                routing_key="provider.#"
-            )
-            
-            self.logger.info("RabbitMQ connection established")
-            
-        except Exception as e:
-            self.logger.error("Failed to initialize RabbitMQ", error=str(e))
-            raise
-            
-    def _register_queue_actions(self):
-        """Register message queue actions."""
-        
+        self._register_actions()
+
+    def _register_actions(self):
         @self.actions.register(
             name="publish_message",
-            description="Publish message to queue",
-            payload_schema={
-                "routing_key": str,
-                "message": Dict[str, Any]
-            }
+            description="Publish a message to a queue",
+            payload_schema=PublishMessagePayload,
+            account_schema=MQAccount
         )
-        def publish_message(payload: Dict[str, Any]) -> ProviderResponse:
-            """
-            Publish message to the queue.
-            
-            Args:
-                payload: Dictionary containing routing key and message
-                
-            Returns:
-                ProviderResponse with publish status
-            """
+        def publish_message(payload: PublishMessagePayload, account: MQAccount) -> ProviderResponse:
             try:
-                routing_key = payload["routing_key"]
-                message = payload["message"]
-                
-                # Publish message
-                self.channel.basic_publish(
-                    exchange="arbvantage",
-                    routing_key=routing_key,
-                    body=json.dumps(message)
+                connection = pika.BlockingConnection(pika.URLParameters(account.url))
+                channel = connection.channel()
+                channel.queue_declare(queue=payload.queue, durable=True)
+                channel.basic_publish(
+                    exchange='',
+                    routing_key=payload.queue,
+                    body=payload.message.encode('utf-8'),
+                    properties=pika.BasicProperties(delivery_mode=2)
                 )
-                
-                return ProviderResponse(
-                    status="success",
-                    message="Message published successfully",
-                    data={
-                        "routing_key": routing_key,
-                        "message": message
-                    }
-                )
-                
+                connection.close()
+                return ProviderResponse(status="success", data={"queue": payload.queue, "message": payload.message})
             except Exception as e:
-                self.logger.error("Error publishing message", error=str(e))
-                return ProviderResponse(
-                    status="error",
-                    message=f"Failed to publish message: {str(e)}"
-                )
-                
+                return ProviderResponse(status="error", message=str(e))
+
         @self.actions.register(
-            name="get_messages",
-            description="Get messages from queue",
-            payload_schema={"count": int}
+            name="consume_message",
+            description="Consume a message from a queue",
+            payload_schema=ConsumeMessagePayload,
+            account_schema=MQAccount
         )
-        def get_messages(payload: Dict[str, Any]) -> ProviderResponse:
-            """
-            Get messages from the queue.
-            
-            Args:
-                payload: Dictionary containing message count
-                
-            Returns:
-                ProviderResponse with messages
-            """
+        def consume_message(payload: ConsumeMessagePayload, account: MQAccount) -> ProviderResponse:
             try:
-                count = payload.get("count", 10)
-                messages = []
-                
-                # Get messages from queue
-                for _ in range(count):
-                    try:
-                        message = self.message_queue.get_nowait()
-                        messages.append(message)
-                    except:
-                        break
-                        
-                return ProviderResponse(
-                    status="success",
-                    message=f"Retrieved {len(messages)} messages",
-                    data={"messages": messages}
-                )
-                
+                connection = pika.BlockingConnection(pika.URLParameters(account.url))
+                channel = connection.channel()
+                channel.queue_declare(queue=payload.queue, durable=True)
+                method_frame, header_frame, body = channel.basic_get(queue=payload.queue, auto_ack=payload.auto_ack)
+                connection.close()
+                if method_frame:
+                    return ProviderResponse(status="success", data={"message": body.decode('utf-8')})
+                else:
+                    return ProviderResponse(status="success", data={"message": None})
             except Exception as e:
-                self.logger.error("Error getting messages", error=str(e))
-                return ProviderResponse(
-                    status="error",
-                    message=f"Failed to get messages: {str(e)}"
-                )
-                
-    def _consume_messages(self):
-        """Consume messages from the queue."""
-        def callback(ch, method, properties, body):
-            try:
-                # Parse message
-                message = json.loads(body)
-                
-                # Add to message queue
-                self.message_queue.put({
-                    "routing_key": method.routing_key,
-                    "message": message,
-                    "timestamp": properties.timestamp
-                })
-                
-                # Acknowledge message
-                ch.basic_ack(delivery_tag=method.delivery_tag)
-                
-            except Exception as e:
-                self.logger.error("Error processing message", error=str(e))
-                
-        try:
-            # Start consuming
-            self.channel.basic_consume(
-                queue="arbvantage_queue",
-                on_message_callback=callback
-            )
-            self.channel.start_consuming()
-            
-        except Exception as e:
-            self.logger.error("Error in consumer thread", error=str(e))
-            
-    def cleanup(self):
-        """Cleanup resources."""
-        if self.connection and not self.connection.is_closed:
-            self.connection.close()
-            
+                return ProviderResponse(status="error", message=str(e))
+
 if __name__ == "__main__":
     provider = MessageQueueProvider()
-    try:
-        provider.start()
-    finally:
-        provider.cleanup() 
+    provider.start() 

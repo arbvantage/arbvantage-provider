@@ -260,25 +260,10 @@ class Provider:
                     errors.append(f"Key {current_path} should be {value_type.__name__}, got {type(data[key]).__name__}")
         return errors
 
-    def process_task(self, action: str, payload: Dict, account: Optional[str] = None) -> Dict[str, Any]:
+    def process_task(self, action: str, payload: dict, account: Optional[dict] = None) -> dict:
         """
         Process a single task by executing the specified action with given parameters.
-        
-        This method is the main entry point for handling tasks received from the Hub. It performs:
-        - Rate limit checks (global and per-action)
-        - Action lookup and validation
-        - Parameter validation (payload and account)
-        - Action execution (with filtered parameters)
-        - Response validation and formatting
-        - Error handling and logging
-        
-        Args:
-            action (str): Name of the action to execute
-            payload (Dict): Action parameters
-            account (Optional[str]): Account identifier if applicable
-        
-        Returns:
-            Dict[str, Any]: Processed task result with status and data
+        Теперь использует Pydantic-схемы для строгой валидации payload и account.
         """
         try:
             # Check provider rate limits
@@ -319,25 +304,26 @@ class Provider:
                         data={"wait_time": limits.get("wait_time")}
                     ), action=action)
 
-            # Validate required parameters for payload if schema exists
-            if hasattr(action_def, 'payload_schema') and action_def.payload_schema:
-                validation_errors = self._validate_schema(payload, action_def.payload_schema)
-                if validation_errors:
-                    self.logger.warning(
-                        "Payload validation failed",
-                        action=action,
-                        errors=validation_errors
-                    )
-                    return self._handle_response(
-                        ProviderResponse(
-                            status="error",
-                            message="Payload validation failed",
-                            data={"errors": validation_errors}
-                        ),
-                        action=action
-                    )
-            # Validate required parameters for account if schema exists
-            if hasattr(action_def, 'account_schema') and action_def.account_schema:
+            # Validate payload using Pydantic
+            try:
+                validated_payload = action_def.validate_payload(payload) if action_def.payload_schema else payload
+            except InvalidPayloadError as e:
+                self.logger.warning(
+                    "Payload validation failed",
+                    action=action,
+                    error=str(e)
+                )
+                return self._handle_response(
+                    ProviderResponse(
+                        status="error",
+                        message="Payload validation failed",
+                        data={"errors": str(e)}
+                    ),
+                    action=action
+                )
+
+            # Validate account using Pydantic
+            if action_def.account_schema:
                 if not account:
                     self.logger.warning(
                         "Account data is required but not provided",
@@ -350,61 +336,45 @@ class Provider:
                         ),
                         action=action
                     )
-                validation_errors = self._validate_schema(account, action_def.account_schema)
-                if validation_errors:
+                try:
+                    validated_account = action_def.validate_account(account)
+                except InvalidPayloadError as e:
                     self.logger.warning(
                         "Account validation failed",
                         action=action,
-                        errors=validation_errors
+                        error=str(e)
                     )
                     return self._handle_response(
                         ProviderResponse(
                             status="error",
                             message="Account validation failed",
-                            data={"errors": validation_errors}
+                            data={"errors": str(e)}
                         ),
                         action=action
                     )
-            
+            else:
+                validated_account = account
+
             action_params = {
-                'payload': {},  # By default, we pass empty payload
-                'account': {},  # By default, we pass empty account
+                'payload': validated_payload,
+                'account': validated_account,
                 'provider': {
                     'name': self.name,
                     'token': self.auth_token,
-                },                
+                },
                 'timezone': self.timezone,
                 'now': datetime.now(self._tzinfo).isoformat(),
                 'now_utc': datetime.now(ZoneInfo("UTC")).isoformat(),
             }
 
-            # Filter payload parameters only if schema exists
-            if hasattr(action_def, 'payload_schema') and action_def.payload_schema:
-                action_params['payload'] = {
-                    param: payload[param]
-                    for param in action_def.payload_schema.keys()
-                }
-
-            # Filter account parameters only if schema exists
-            if hasattr(action_def, 'account_schema') and action_def.account_schema:
-                action_params['account'] = {
-                    param: account[param]
-                    for param in action_def.account_schema.keys()
-                }
-            
-            # Execute action and validate response
             self.logger.info(
                 "Executing action",
                 action=action
             )
-            
-            # Filter parameters before passing to the handler
-            # This ensures that only the parameters required by the handler are passed
-            # For example, if the handler only needs 'payload' and 'logger', it will not receive 'account', 'provider', etc.
+
             filtered_params = self._filter_action_params(action_def.handler, action_params)
             result = action_def.handler(**filtered_params)
-            
-            # Check if result is an instance of ProviderResponse
+
             if not isinstance(result, ProviderResponse):
                 error_msg = f"Action {action} must return ProviderResponse instance, got {type(result)}"
                 self.logger.error(
@@ -418,13 +388,13 @@ class Provider:
                     data=result,
                     message=error_msg
                 ))
-            
+
             self.logger.info(
                 "Action completed successfully",
                 action=action,
                 status=result.status
             )
-            
+
             return self._handle_response(result, action=action)
 
         except Exception as e:

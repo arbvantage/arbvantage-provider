@@ -107,8 +107,13 @@ The framework requires the following dependencies:
 Here's a minimal example to get you started:
 
 ```python
-from arbvantage_provider import Provider
+from pydantic import BaseModel, Field
+from arbvantage_provider import Provider, ProviderResponse
 import os
+
+class MyActionPayload(BaseModel):
+    param1: str = Field(..., description="First parameter")
+    param2: int = Field(..., description="Second parameter")
 
 class MyProvider(Provider):
     def __init__(self):
@@ -122,11 +127,11 @@ class MyProvider(Provider):
         @self.actions.register(
             name="my_action",
             description="Description of what this action does",
-            payload_schema={"param1": str, "param2": int}
+            payload_schema=MyActionPayload
         )
-        def my_action(param1: str, param2: int):
+        def my_action(payload: MyActionPayload):
             # Implementation of your action
-            return {"result": "success"}
+            return ProviderResponse(status="success", data={"result": "success"})
 
 if __name__ == "__main__":
     provider = MyProvider()
@@ -839,5 +844,53 @@ If the payload is missing `profile.settings.notifications.sms`, the error will l
 - Always define your schemas as deeply as your business logic requires.
 - Use lists and nested dicts to express complex data structures.
 - The validation system will help you catch errors early and provide clear feedback to API users.
+
+## Example: Complex Nested Pydantic Schemas
+
+You can define deeply nested payload and account schemas using Pydantic models. This allows for strict validation, autocompletion, and clear documentation.
+
+```python
+from pydantic import BaseModel, Field
+from typing import List, Dict, Optional
+from arbvantage_provider import Provider, ProviderResponse
+
+class NotificationSettings(BaseModel):
+    email: bool = Field(..., description="Enable email notifications")
+    sms: bool = Field(..., description="Enable SMS notifications")
+
+class UserProfile(BaseModel):
+    first_name: str = Field(..., description="First name")
+    last_name: str = Field(..., description="Last name")
+    settings: Dict[str, str] = Field(default_factory=dict, description="User settings")
+    notifications: NotificationSettings
+
+class CreateUserPayload(BaseModel):
+    username: str = Field(..., min_length=3, description="Username")
+    profile: UserProfile
+    tags: List[str] = Field(default_factory=list, description="List of tags")
+
+class AccountInfo(BaseModel):
+    api_key: str = Field(..., min_length=32, description="API key for authentication")
+    permissions: Dict[str, bool] = Field(default_factory=dict, description="Permissions map")
+
+class MyProvider(Provider):
+    def __init__(self):
+        super().__init__(name="complex-provider", auth_token="token", hub_url="hub-grpc:50051")
+        @self.actions.register(
+            name="create_user_profile",
+            description="Create a user profile with nested settings and preferences",
+            payload_schema=CreateUserPayload,
+            account_schema=AccountInfo
+        )
+        def create_user_profile(payload: CreateUserPayload, account: AccountInfo) -> ProviderResponse:
+            # You get full type safety and autocompletion here
+            return ProviderResponse(status="success", data={"username": payload.username, "email_enabled": payload.profile.notifications.email})
+```
+
+**Advantages:**
+- Full validation of nested structures
+- Autocompletion in IDEs
+- Clear error messages for deeply nested fields
+- Easy to extend and document
 
 ---

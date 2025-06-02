@@ -1,7 +1,7 @@
 """
 Database Provider Example
 
-This example demonstrates how to implement a provider with database support using the Arbvantage Provider Framework.
+This example demonstrates how to implement a provider with database support using the Arbvantage Provider Framework and explicit Pydantic schemas.
 It shows how to:
 1. Use SQLAlchemy for database access
 2. Register actions for CRUD operations
@@ -19,7 +19,8 @@ This example shows how to integrate persistent storage, manage transactions, and
 """
 
 import os
-from typing import Dict, Any, List, Optional
+from typing import Optional
+from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, Column, Integer, String, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -32,76 +33,64 @@ Base = declarative_base()
 class User(Base):
     """User model for database operations."""
     __tablename__ = 'users'
-    
     id = Column(Integer, primary_key=True)
     name = Column(String(100), nullable=False)
     email = Column(String(100), unique=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+# --- Pydantic Schemas ---
+class CreateUserPayload(BaseModel):
+    name: str = Field(..., min_length=1, description="User name")
+    email: str = Field(..., min_length=3, description="User email")
+
+class GetUserPayload(BaseModel):
+    user_id: int = Field(..., description="User ID")
+
+class UpdateUserPayload(BaseModel):
+    user_id: int = Field(..., description="User ID")
+    name: str = Field(..., min_length=1, description="User name")
+    email: str = Field(..., min_length=3, description="User email")
+
+class DeleteUserPayload(BaseModel):
+    user_id: int = Field(..., description="User ID")
+
+class ListUsersPayload(BaseModel):
+    pass
+
 class DatabaseProvider(Provider):
     """
-    Provider with database support.
-    
-    This provider demonstrates how to implement database operations.
-    It uses SQLAlchemy for database access and provides CRUD operations.
-    
-    Why is this important?
-    -----------------------------------
-    Shows how to persist data, manage transactions, and structure actions for real-world business logic.
+    Provider with database support using explicit Pydantic schemas.
     """
-    
     def __init__(self):
         super().__init__(
             name="database-provider",
             auth_token=os.getenv("PROVIDER_AUTH_TOKEN"),
             hub_url=os.getenv("HUB_GRPC_URL", "hub-grpc:50051")
         )
-        
-        # Initialize database connection
         self.engine = create_engine(
             os.getenv("DATABASE_URL", "sqlite:///example.db"),
             echo=True
         )
-        
-        # Create tables
         Base.metadata.create_all(self.engine)
-        
-        # Create session factory
         self.Session = sessionmaker(bind=self.engine)
-        
-        # Register database actions
         self._register_database_actions()
-        
+
     def _register_database_actions(self):
-        """Register database actions."""
-        
         @self.actions.register(
             name="create_user",
             description="Create a new user",
-            payload_schema={"name": str, "email": str}
+            payload_schema=CreateUserPayload
         )
-        def create_user(payload: Dict[str, Any]) -> ProviderResponse:
-            """
-            Create a new user in the database.
-            
-            Args:
-                payload (dict): Must contain 'name' and 'email'.
-            Returns:
-                ProviderResponse: status 'success' and created user data, or 'error' on failure.
-            Why is this important?
-            -----------------------------------
-            Shows how to insert data and handle unique constraints and errors.
-            """
+        def create_user(payload: CreateUserPayload) -> ProviderResponse:
             session = self.Session()
             try:
                 user = User(
-                    name=payload["name"],
-                    email=payload["email"]
+                    name=payload.name,
+                    email=payload.email
                 )
                 session.add(user)
                 session.commit()
-                
                 return ProviderResponse(
                     status="success",
                     message="User created successfully",
@@ -121,33 +110,21 @@ class DatabaseProvider(Provider):
                 )
             finally:
                 session.close()
-                
+
         @self.actions.register(
             name="get_user",
             description="Get user by ID",
-            payload_schema={"user_id": int}
+            payload_schema=GetUserPayload
         )
-        def get_user(payload: Dict[str, Any]) -> ProviderResponse:
-            """
-            Get user by ID from the database.
-            
-            Args:
-                payload (dict): Must contain 'user_id'.
-            Returns:
-                ProviderResponse: status 'success' and user data, or 'error' if not found.
-            Why is this important?
-            -----------------------------------
-            Shows how to retrieve data and handle missing records.
-            """
+        def get_user(payload: GetUserPayload) -> ProviderResponse:
             session = self.Session()
             try:
-                user = session.query(User).get(payload["user_id"])
+                user = session.query(User).get(payload.user_id)
                 if not user:
                     return ProviderResponse(
                         status="error",
                         message="User not found"
                     )
-                    
                 return ProviderResponse(
                     status="success",
                     message="User retrieved successfully",
@@ -167,37 +144,24 @@ class DatabaseProvider(Provider):
                 )
             finally:
                 session.close()
-                
+
         @self.actions.register(
             name="update_user",
             description="Update user data",
-            payload_schema={"user_id": int, "name": str, "email": str}
+            payload_schema=UpdateUserPayload
         )
-        def update_user(payload: Dict[str, Any]) -> ProviderResponse:
-            """
-            Update user data in the database.
-            
-            Args:
-                payload (dict): Must contain 'user_id', 'name', and 'email'.
-            Returns:
-                ProviderResponse: status 'success' and updated user data, or 'error' if not found.
-            Why is this important?
-            -----------------------------------
-            Shows how to update records and handle errors/rollbacks.
-            """
+        def update_user(payload: UpdateUserPayload) -> ProviderResponse:
             session = self.Session()
             try:
-                user = session.query(User).get(payload["user_id"])
+                user = session.query(User).get(payload.user_id)
                 if not user:
                     return ProviderResponse(
                         status="error",
                         message="User not found"
                     )
-                    
-                user.name = payload["name"]
-                user.email = payload["email"]
+                user.name = payload.name
+                user.email = payload.email
                 session.commit()
-                
                 return ProviderResponse(
                     status="success",
                     message="User updated successfully",
@@ -217,39 +181,27 @@ class DatabaseProvider(Provider):
                 )
             finally:
                 session.close()
-                
+
         @self.actions.register(
             name="delete_user",
             description="Delete user",
-            payload_schema={"user_id": int}
+            payload_schema=DeleteUserPayload
         )
-        def delete_user(payload: Dict[str, Any]) -> ProviderResponse:
-            """
-            Delete user from the database.
-            
-            Args:
-                payload (dict): Must contain 'user_id'.
-            Returns:
-                ProviderResponse: status 'success' or 'error' if not found.
-            Why is this important?
-            -----------------------------------
-            Shows how to delete records and handle errors/rollbacks.
-            """
+        def delete_user(payload: DeleteUserPayload) -> ProviderResponse:
             session = self.Session()
             try:
-                user = session.query(User).get(payload["user_id"])
+                user = session.query(User).get(payload.user_id)
                 if not user:
                     return ProviderResponse(
                         status="error",
                         message="User not found"
                     )
-                    
                 session.delete(user)
                 session.commit()
-                
                 return ProviderResponse(
                     status="success",
-                    message="User deleted successfully"
+                    message="User deleted successfully",
+                    data={"id": payload.user_id}
                 )
             except Exception as e:
                 session.rollback()
@@ -260,28 +212,17 @@ class DatabaseProvider(Provider):
                 )
             finally:
                 session.close()
-                
+
         @self.actions.register(
             name="list_users",
             description="List all users",
-            payload_schema={}
+            payload_schema=ListUsersPayload
         )
-        def list_users(payload: Dict[str, Any]) -> ProviderResponse:
-            """
-            List all users from the database.
-            
-            Args:
-                payload (dict): Not used for this action.
-            Returns:
-                ProviderResponse: status 'success' and list of users.
-            Why is this important?
-            -----------------------------------
-            Shows how to return collections of records.
-            """
+        def list_users(payload: ListUsersPayload) -> ProviderResponse:
             session = self.Session()
             try:
                 users = session.query(User).all()
-                data = [
+                user_list = [
                     {
                         "id": user.id,
                         "name": user.name,
@@ -294,7 +235,7 @@ class DatabaseProvider(Provider):
                 return ProviderResponse(
                     status="success",
                     message="Users listed successfully",
-                    data=data
+                    data={"users": user_list}
                 )
             except Exception as e:
                 self.logger.error("Error listing users", error=str(e))
@@ -306,12 +247,5 @@ class DatabaseProvider(Provider):
                 session.close()
 
 if __name__ == "__main__":
-    """
-    Run the provider if this script is executed directly.
-    
-    Why is this important?
-    -----------------------------------
-    This allows you to test database actions and persistence before integrating with the hub.
-    """
     provider = DatabaseProvider()
     provider.start() 

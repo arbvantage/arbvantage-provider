@@ -40,13 +40,13 @@ from .exceptions import ProviderError, ActionNotFoundError, InvalidPayloadError
 from .protos import hub_pb2, hub_pb2_grpc
 
 # Import the Pydantic schema for validating and serializing provider responses.
-from .schemas import ProviderResponse
+from .schemas import ProviderResponse, BasePayload, BaseAccount
 
 # Import different strategies for rate limiting.
 from .rate_limit import RateLimitMonitor, NoRateLimitMonitor, TimeBasedRateLimitMonitor, AdvancedRateLimitMonitor
 
 # Version of the package.
-__version__ = "1.2.2"
+__version__ = "2.0.0"
 
 # __all__ defines the public API of this module.
 # By listing all main exports here, you make it clear what is intended for public use.
@@ -61,6 +61,8 @@ __all__ = [
     'hub_pb2',
     'hub_pb2_grpc',
     'ProviderResponse',
+    'BasePayload',
+    'BaseAccount',
     'RateLimitMonitor',
     'NoRateLimitMonitor',
     'TimeBasedRateLimitMonitor',
