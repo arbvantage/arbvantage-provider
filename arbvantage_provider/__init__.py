@@ -46,7 +46,7 @@ from .schemas import ProviderResponse, BasePayload, BaseAccount
 from .rate_limit import RateLimitMonitor, NoRateLimitMonitor, TimeBasedRateLimitMonitor, AdvancedRateLimitMonitor
 
 # Version of the package.
-__version__ = "2.0.0"
+__version__ = "2.0.1"
 
 # __all__ defines the public API of this module.
 # By listing all main exports here, you make it clear what is intended for public use.

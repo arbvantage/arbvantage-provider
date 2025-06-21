@@ -504,7 +504,21 @@ class Provider:
                         result=json.dumps(result),
                         account=json.dumps(account)
                     ))
-                    
+
+                    # Log the result
+                    log_details = {
+                        "id": task.id,
+                        "status": status,
+                    }
+                    # Add error/limit details to the log for better diagnostics
+                    if status in ["error", "limit"] and result.get("message"):
+                        # Truncate the message to avoid excessively long log entries
+                        log_details["details"] = str(result["message"])[:1024]
+                        
+                    self.logger.info(
+                        "Task completed",
+                        **log_details
+                    )
                     self.logger.info(
                         "Task completed",
                         id=task.id,
