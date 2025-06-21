@@ -52,7 +52,7 @@ class ProviderResponse(BaseModel):
     This reduces bugs, makes integration easier, and improves reliability.
     """
     # Status of the response: must be 'success', 'error', or 'warning'.
-    status: Literal['success', 'error', 'warning']
+    status: Literal['success', 'error', 'warning', 'limit']
     # Human readable result message, required and must be at least 1 character.
     message: str = Field(..., min_length=1, description="Human readable result message")
     # Optional additional result data as a dictionary.
