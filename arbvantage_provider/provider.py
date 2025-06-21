@@ -259,6 +259,18 @@ class Provider:
                 if not isinstance(data[key], value_type):
                     errors.append(f"Key {current_path} should be {value_type.__name__}, got {type(data[key]).__name__}")
         return errors
+    
+    def handle_task_exception(self, e: Exception, action: str, payload: dict, account: Optional[dict]) -> dict:
+        """
+        Handles exceptions that occur during task processing.
+        This method can be overridden by subclasses for provider-specific exception handling.
+        """
+        self.logger.exception(
+            "Error processing task",
+            action=action,
+            error=str(e)
+        )
+        return self._handle_response(ProviderResponse(status="error", message=str(e)), action=action)
 
     def process_task(self, action: str, payload: dict, account: Optional[dict] = None) -> dict:
         """
@@ -398,12 +410,7 @@ class Provider:
             return self._handle_response(result, action=action)
 
         except Exception as e:
-            self.logger.exception(
-                "Error processing task",
-                action=action,
-                error=str(e)
-            )
-            return self._handle_response(ProviderResponse(status="error", message=str(e)), action=action)
+            return self.handle_task_exception(e, action, payload, account)
 
     def start(self):
         """
@@ -514,7 +521,7 @@ class Provider:
                     if status in ["error", "limit"] and result.get("message"):
                         # Truncate the message to avoid excessively long log entries
                         log_details["details"] = str(result["message"])[:1024]
-                        
+
                     self.logger.info(
                         "Task completed",
                         **log_details

@@ -701,9 +701,7 @@ The framework comes with several example providers demonstrating different use c
 5. **External API Provider** (`examples/external_api_provider.py`)
    - External API integration
    - API authentication
-   - Rate limiting
-   - Retry logic
-   - Response caching
+   - Custom error handling for API requests
 
 ### Facebook Integration Example
 
@@ -781,6 +779,53 @@ def catch_all(**kwargs):
 - Only the parameters that your handler accepts will be passed.
 - If you use **kwargs, you can access any extra parameters you need.
 - This approach allows you to write both strict and flexible actions, depending on your needs.
+
+## Error Handling
+
+The framework provides a robust mechanism for handling errors that may occur during task processing. By default, any exception raised within an action is caught, logged, and a standardized error response is returned to the hub.
+
+### Customizing Error Handling
+
+For more advanced scenarios, such as handling specific network errors or database exceptions, you can override the `handle_task_exception` method in your provider subclass. This allows you to implement custom logic for specific types of exceptions.
+
+When overriding this method, it is a good practice to handle your specific exceptions and then call the parent implementation using `super().handle_task_exception(...)` for any other unhandled exceptions. This ensures that you maintain the default error handling behavior for unexpected errors.
+
+Here is an example of how to handle a `requests.RequestException` in a custom provider:
+
+```python
+import requests
+from arbvantage_provider import Provider, ProviderResponse
+from typing import Optional
+
+class MyApiProvider(Provider):
+    # ... (provider initialization) ...
+
+    def handle_task_exception(self, e: Exception, action: str, payload: dict, account: Optional[dict]) -> dict:
+        """
+        Custom exception handler for API-specific errors.
+        """
+        if isinstance(e, requests.RequestException):
+            self.logger.error(
+                "A network error occurred while interacting with the external API",
+                action=action,
+                error=str(e)
+            )
+            # Return a custom response for this specific error
+            return self._handle_response(
+                ProviderResponse(status="error", message=f"API request failed: {e}"),
+                action=action
+            )
+        
+        # Fall back to the default handler for all other exceptions
+        return super().handle_task_exception(e, action, payload, account)
+
+    def _register_actions(self):
+        @self.actions.register(name="fetch_data")
+        def fetch_data(payload: dict, account: dict) -> ProviderResponse:
+            # This method might raise a requests.RequestException
+            response = requests.get("https://api.example.com/data", timeout=10)
+            response.raise_for_status() # Raises an exception for 4xx/5xx responses
+            return ProviderResponse(status="success", data=response.json())
 
 ## Nested Schema Validation
 
