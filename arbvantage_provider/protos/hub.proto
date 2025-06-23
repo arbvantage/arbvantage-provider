@@ -41,6 +41,22 @@ message Task {
     string action = 2;
     bytes payload = 3;
     bytes account = 4;
+    string recreated_from = 5;
+}
+
+// GetTaskResponse: Response from the Hub when a provider requests a task.
+// It can contain either a task or rate limit information.
+message GetTaskResponse {
+    // RateLimitInfo: Information about rate limiting.
+    message RateLimitInfo {
+        bool is_limited = 1;      // True if the provider is rate-limited
+        int32 wait_time = 2;      // Recommended wait time in seconds
+    }
+
+    oneof response_type {
+        Task task = 1;
+        RateLimitInfo rate_limit_info = 2;
+    }
 }
 
 // Hub: gRPC service definition for communication between providers and the Hub.
@@ -48,6 +64,6 @@ message Task {
 //   GetTask: Provider requests a new task from the Hub.
 //   SubmitTaskResult: Provider submits the result of a processed task.
 service Hub {
-    rpc GetTask(ProviderRequest) returns (Task) {}
+    rpc GetTask(ProviderRequest) returns (GetTaskResponse) {}
     rpc SubmitTaskResult(TaskResult) returns (Task) {}
 }

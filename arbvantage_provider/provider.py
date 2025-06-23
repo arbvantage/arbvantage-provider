@@ -477,15 +477,28 @@ class Provider:
         """
         while self.running:
             try:
-                task = stub.GetTask(hub_pb2.ProviderRequest(
+                response = stub.GetTask(hub_pb2.ProviderRequest(
                     provider=self.name,
                     auth_token=self.auth_token
                 ))
 
-                if not task.id:
+                # Check for rate limit response from the Hub
+                if response.HasField("rate_limit_info"):
+                    wait_time = response.rate_limit_info.wait_time
+                    self.logger.warning(
+                        "Rate limit exceeded on Hub. Waiting for %s seconds.",
+                        wait_time,
+                        provider_name=self.name
+                    )
+                    time.sleep(wait_time)
+                    continue
+
+                # Check if a task was received
+                if not response.HasField("task") or not response.task.id:
                     time.sleep(self.execution_timeout)
                     continue
 
+                task = response.task
                 self.logger.info(
                     "Received task",
                     id=task.id,
