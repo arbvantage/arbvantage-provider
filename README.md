@@ -492,14 +492,44 @@ The rate limiting system is implemented using:
 
 ## Response Formats
 
-The framework provides standardized response formats for all operations. Here are all possible response types:
+The framework provides standardized response formats for all operations. **All response types now have a consistent structure with metadata**, ensuring uniform handling across success, error, and rate limit responses.
+
+### Unified Response Structure
+
+All responses follow this consistent format with metadata:
+
+```python
+{
+    "status": str,      # Status code (success/error/limit)
+    "message": str,     # Human-readable message
+    "data": {
+        "provider": str,        # Provider name
+        "action": str,          # Action name
+        "timezone": str,        # Provider timezone
+        "now": str,            # Current time in provider timezone (ISO format)
+        "now_utc": str,        # Current UTC time (ISO format)
+        "response": dict        # Actual response data or error details
+    }
+}
+```
 
 ### 1. Success Response
 ```python
 {
     "status": "success",
+    "message": "Action completed successfully",
     "data": {
-        # Any data returned by the action
+        "provider": "facebook",
+        "action": "get_business_info",
+        "timezone": "Europe/Moscow",
+        "now": "2024-03-20T10:30:00+03:00",
+        "now_utc": "2024-03-20T07:30:00+00:00",
+        "response": {
+            "business_id": "123456789",
+            "name": "My Business",
+            "timezone": "Europe/Moscow",
+            "currency": "RUB"
+        }
     }
 }
 ```
@@ -508,9 +538,18 @@ The framework provides standardized response formats for all operations. Here ar
 ```python
 {
     "status": "error",
-    "message": "Error description",
+    "message": "Authentication failed: Invalid token",
     "data": {
-        # Optional additional error data
+        "provider": "facebook",
+        "action": "get_business_info",
+        "timezone": "Europe/Moscow",
+        "now": "2024-03-20T10:30:00+03:00",
+        "now_utc": "2024-03-20T07:30:00+00:00",
+        "response": {
+            "error": "Invalid access token",
+            "error_code": "AUTH_ERROR",
+            "details": "Token expired"
+        }
     }
 }
 ```
@@ -519,10 +558,18 @@ The framework provides standardized response formats for all operations. Here ar
 ```python
 {
     "status": "limit",
-    "message": "Rate limit exceeded. Please wait X seconds",
+    "message": "Rate limit exceeded. Please wait 5 seconds",
     "data": {
-        "wait_time": 5.5,  # Time in seconds to wait before next request
-        # Additional rate limit metrics depending on monitor type
+        "provider": "facebook",
+        "action": "get_business_info",
+        "timezone": "Europe/Moscow",
+        "now": "2024-03-20T10:30:00+03:00",
+        "now_utc": "2024-03-20T07:30:00+00:00",
+        "response": {
+            "wait_time": 5.0,
+            "current_usage": 0.9,
+            "limit_type": "time_based"
+        }
     }
 }
 ```
@@ -531,99 +578,62 @@ The framework provides standardized response formats for all operations. Here ar
 ```python
 {
     "status": "error",
-    "message": "Invalid payload: Missing required parameters: param1, param2",
+    "message": "Payload validation failed",
     "data": {
-        "missing_params": ["param1", "param2"],
-        "schema": {
-            "param1": str,
-            "param2": int
+        "provider": "facebook",
+        "action": "get_business_info",
+        "timezone": "Europe/Moscow",
+        "now": "2024-03-20T10:30:00+03:00",
+        "now_utc": "2024-03-20T07:30:00+00:00",
+        "response": {
+            "error": "Missing required parameters: business_id, access_token"
         }
     }
 }
 ```
 
-### 5. Authentication Error Response
-```python
-{
-    "status": "error",
-    "message": "Authentication failed: Invalid token",
-    "data": {
-        "error_code": "AUTH_ERROR",
-        "details": "Token expired"
-    }
-}
-```
-
-### 6. Connection Error Response
-```python
-{
-    "status": "error",
-    "message": "Failed to connect to hub: Connection refused",
-    "data": {
-        "error_code": "CONNECTION_ERROR",
-        "retry_count": 3,
-        "next_retry": "2024-03-20T10:00:00Z"
-    }
-}
-```
-
-### 7. Action Not Found Response
+### 5. Action Not Found Response
 ```python
 {
     "status": "error",
     "message": "Action 'unknown_action' not found",
     "data": {
-        "available_actions": ["action1", "action2", "action3"]
+        "provider": "facebook",
+        "action": "unknown_action",
+        "timezone": "Europe/Moscow",
+        "now": "2024-03-20T10:30:00+03:00",
+        "now_utc": "2024-03-20T07:30:00+00:00",
+        "response": {
+            "error": "Action not found",
+            "available_actions": ["get_business_info", "get_metrics"]
+        }
     }
 }
 ```
 
-### 8. Advanced Rate Limit Response
+### 6. Advanced Rate Limit Response
 ```python
 {
     "status": "limit",
-    "message": "Rate limit exceeded. Please wait X seconds",
+    "message": "Rate limit exceeded. Please wait 3.2 seconds",
     "data": {
-        "wait_time": 3.2,  # Time in seconds to wait before next request
-        "metrics": {
-            "call_count": 100,
-            "total_time": 50.5,
-            "total_cpu": 75.2
-        },
-        "is_near_limit": true,
-        "is_critical": false,
-        "call_usage": 0.85,
-        "cpu_usage": 0.75
-    }
-}
-```
-
-### 9. Redis Rate Limit Response
-```python
-{
-    "status": "limit",
-    "message": "Rate limit exceeded. Please wait X seconds",
-    "data": {
-        "wait_time": 15.0,  # Time in seconds to wait before next request
-        "current_count": 95,
-        "limit": 100,
-        "window_size": 60,
-        "window_key": "rate_limit:1234567890"
-    }
-}
-```
-
-### 10. Shared Rate Limit Response
-```python
-{
-    "status": "limit",
-    "message": "Rate limit exceeded. Please wait X seconds",
-    "data": {
-        "wait_time": 10.0,  # Time in seconds to wait before next request
-        "current_count": 98,
-        "limit": 100,
-        "window_size": 60,
-        "providers": ["provider-a", "provider-b"]
+        "provider": "facebook",
+        "action": "get_metrics",
+        "timezone": "Europe/Moscow",
+        "now": "2024-03-20T10:30:00+03:00",
+        "now_utc": "2024-03-20T07:30:00+00:00",
+        "response": {
+            "wait_time": 3.2,
+            "metrics": {
+                "call_count": 100,
+                "total_time": 50.5,
+                "total_cpu": 75.2
+            },
+            "is_near_limit": true,
+            "is_critical": false,
+            "call_usage": 0.85,
+            "cpu_usage": 0.75
+        }
     }
 }
 ```
@@ -638,16 +648,26 @@ The framework uses the following status codes:
 | `error` | General error occurred | For validation, authentication, connection errors |
 | `limit` | Rate limit exceeded | When rate limit is reached |
 
-### Response Data Structure
+### Metadata Fields
 
-All responses follow this basic structure:
-```python
-{
-    "status": str,      # Status code (success/error/limit)
-    "message": str,     # Human-readable message
-    "data": dict       # Additional data (optional)
-}
-```
+All responses include these metadata fields in the `data` section:
+
+| Field | Description | Example |
+|-------|-------------|---------|
+| `provider` | Name of the provider | `"facebook"` |
+| `action` | Name of the action executed | `"get_business_info"` |
+| `timezone` | Provider's configured timezone | `"Europe/Moscow"` |
+| `now` | Current time in provider timezone | `"2024-03-20T10:30:00+03:00"` |
+| `now_utc` | Current UTC time | `"2024-03-20T07:30:00+00:00"` |
+| `response` | Actual response data or error details | `{"result": "data"}` or `{"error": "details"}` |
+
+### Benefits of Unified Format
+
+1. **Consistency**: All response types have the same structure
+2. **Traceability**: Every response includes provider, action, and timestamp information
+3. **Debugging**: Easy to identify which provider and action generated the response
+4. **Monitoring**: Timestamps and metadata enable better monitoring and logging
+5. **Integration**: External systems can rely on consistent response structure
 
 The `data` field is optional and its structure depends on the specific response type and context. For rate limit responses, the `wait_time` field indicates how many seconds you need to wait before making the next request. This value is always a positive number and represents the minimum time to wait to avoid rate limit restrictions.
 

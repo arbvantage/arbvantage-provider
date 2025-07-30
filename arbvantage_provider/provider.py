@@ -157,18 +157,25 @@ class Provider:
             Dict[str, Any]: Converted response with data field wrapped with provider name
         """
         response_dict = response.model_dump()
-        if "data" in response_dict:
-            now = datetime.now(self._tzinfo)
-            now_utc = datetime.now(ZoneInfo("UTC"))
-            data = {
-                "provider": self.name,
-                "action": action or "",
-                "timezone": str(self._tzinfo),
-                "now": now.isoformat(),
-                "now_utc": now_utc.isoformat(),
-                "response": response_dict["data"] or {}
-            }
-            response_dict["data"] = data
+        
+        # Always add metadata to ensure consistent format for all response types
+        now = datetime.now(self._tzinfo)
+        now_utc = datetime.now(ZoneInfo("UTC"))
+        
+        # Get the original data or create empty dict if None
+        original_data = response_dict.get("data") or {}
+        
+        # Create standardized data structure with metadata
+        data = {
+            "provider": self.name,
+            "action": action or "",
+            "timezone": str(self._tzinfo),
+            "now": now.isoformat(),
+            "now_utc": now_utc.isoformat(),
+            "response": original_data
+        }
+        
+        response_dict["data"] = data
         return response_dict
 
     def _filter_action_params(self, handler, params: dict) -> dict:
@@ -270,7 +277,11 @@ class Provider:
             action=action,
             error=str(e)
         )
-        return self._handle_response(ProviderResponse(status="error", message=str(e)), action=action)
+        return self._handle_response(ProviderResponse(
+            status="error", 
+            message=str(e),
+            data={"error": str(e)}
+        ), action=action)
 
     def process_task(self, action: str, payload: dict, account: Optional[dict] = None) -> dict:
         """
@@ -329,7 +340,7 @@ class Provider:
                     ProviderResponse(
                         status="error",
                         message="Payload validation failed",
-                        data={"errors": str(e)}
+                        data={"error": str(e)}
                     ),
                     action=action
                 )
@@ -360,7 +371,7 @@ class Provider:
                         ProviderResponse(
                             status="error",
                             message="Account validation failed",
-                            data={"errors": str(e)}
+                            data={"error": str(e)}
                         ),
                         action=action
                     )
